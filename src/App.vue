@@ -8,6 +8,11 @@ import {
   NMessageProvider,
   NSpace
 } from 'naive-ui';
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
+const isReaderRoute = computed(() => route.name === 'reader');
 </script>
 
 <template>
@@ -15,7 +20,7 @@ import {
     <n-message-provider>
       <n-global-style />
       <n-layout class="app-shell" position="absolute">
-        <n-layout-header bordered class="topbar">
+        <n-layout-header v-if="!isReaderRoute" bordered class="topbar">
           <div class="topbar-inner">
             <router-link class="brand" to="/">轻小说阅读站</router-link>
             <n-space align="center" :size="20">
@@ -25,7 +30,7 @@ import {
           </div>
         </n-layout-header>
         <n-layout-content embedded>
-          <main class="page-shell">
+          <main class="page-shell" :class="{ 'reader-page-shell': isReaderRoute }">
             <router-view />
           </main>
         </n-layout-content>

@@ -73,6 +73,10 @@ a {
   padding: 24px 0 40px;
 }
 
+.reader-page-shell {
+  padding-top: 20px;
+}
+
 .n-card {
   overflow: hidden;
 }
@@ -343,6 +347,10 @@ a {
 @media (max-width: 640px) {
   .page-shell {
     padding: 16px 0 28px;
+  }
+
+  .reader-page-shell {
+    padding-top: 12px;
   }
 
   .topbar-inner {
