@@ -41,14 +41,14 @@ onMounted(refreshHistory);
 <template>
   <n-space vertical :size="20">
     <n-grid :cols="24" :x-gap="16" :y-gap="16">
-      <n-grid-item :span="18">
+      <n-grid-item :span="18" :m="18" :s="24" :xs="24">
         <n-card class="hero-card" :bordered="false">
           <p class="eyebrow">HISTORY</p>
           <h1 class="page-title">历史记录</h1>
           <p class="page-desc">查看最近浏览过的书籍，以及上次阅读到哪一卷。</p>
         </n-card>
       </n-grid-item>
-      <n-grid-item :span="6">
+      <n-grid-item :span="6" :m="6" :s="24" :xs="24">
         <n-card class="stat-card" :bordered="false">
           <div class="history-stat">
             <div class="history-stat-label">历史总数</div>
@@ -61,7 +61,7 @@ onMounted(refreshHistory);
 
     <template v-if="hasHistory">
       <n-grid :cols="24" :x-gap="16" :y-gap="16">
-        <n-grid-item :span="12">
+        <n-grid-item :span="12" :m="12" :s="24" :xs="24">
           <n-card title="书籍历史" :bordered="false">
             <n-space vertical :size="12">
               <router-link
@@ -85,7 +85,7 @@ onMounted(refreshHistory);
           </n-card>
         </n-grid-item>
 
-        <n-grid-item :span="12">
+        <n-grid-item :span="12" :m="12" :s="24" :xs="24">
           <n-card title="卷历史" :bordered="false">
             <n-space vertical :size="12">
               <router-link

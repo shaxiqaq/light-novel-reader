@@ -50,10 +50,10 @@ watch(pathWord, loadBook);
       <template v-else-if="book">
         <n-card :bordered="false">
           <n-grid :cols="24" :x-gap="20" :y-gap="16">
-            <n-grid-item :span="6">
+            <n-grid-item :span="6" :m="6" :s="24" :xs="24">
               <img class="detail-cover" :src="book.cover" :alt="book.title" />
             </n-grid-item>
-            <n-grid-item :span="18">
+            <n-grid-item :span="18" :m="18" :s="24" :xs="24">
               <n-space vertical :size="16">
                 <div>
                   <p class="eyebrow">BOOK DETAIL</p>

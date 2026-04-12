@@ -30,12 +30,53 @@ const readingStyle = computed(() => ({
 }));
 
 const themeClass = computed(() => `reader-theme-${settings.theme}`);
+const endActionLabel = computed(() => (volume.value?.next ? '跳转下一章' : '已经是最后一章'));
 
 const themeOptions = [
-  { label: '纸页', value: 'paper' },
-  { label: '雾灰', value: 'mist' },
-  { label: '夜读', value: 'night' }
+  { label: '白天', value: 'paper' },
+  { label: '柔和', value: 'mist' },
+  { label: '黑夜', value: 'night' }
 ];
+
+function getScrollContainers() {
+  const containers = [];
+  const scrollingElement = document.scrollingElement || document.documentElement;
+
+  if (scrollingElement) {
+    containers.push(scrollingElement);
+  }
+
+  document.querySelectorAll('.n-layout-scroll-container').forEach((element) => {
+    if (!containers.includes(element)) {
+      containers.push(element);
+    }
+  });
+
+  return containers;
+}
+
+function getCurrentScrollTop() {
+  const [container] = getScrollContainers();
+  return container ? container.scrollTop : window.scrollY || 0;
+}
+
+function setScrollTop(top) {
+  getScrollContainers().forEach((container) => {
+    container.scrollTo({ top, behavior: 'auto' });
+  });
+
+  window.scrollTo({ top, behavior: 'auto' });
+}
+
+function markJumpToTop(targetVolumeId) {
+  sessionStorage.setItem(
+    'reader-force-top',
+    JSON.stringify({
+      pathWord: route.params.pathWord,
+      volumeId: String(targetVolumeId)
+    })
+  );
+}
 
 async function loadReader() {
   loading.value = true;
@@ -75,7 +116,7 @@ function persistSettings() {
 function persistScroll() {
   const progress = loadReadingProgress();
   progress[routeKey.value] = {
-    scrollY: window.scrollY,
+    scrollY: getCurrentScrollTop(),
     savedAt: new Date().toISOString(),
     title: volume.value?.title || ''
   };
@@ -93,16 +134,44 @@ function persistScroll() {
 }
 
 function restoreScroll() {
+  const forceTopRaw = sessionStorage.getItem('reader-force-top');
+
+  if (forceTopRaw) {
+    try {
+      const forceTop = JSON.parse(forceTopRaw);
+      if (
+        forceTop?.pathWord === route.params.pathWord &&
+        forceTop?.volumeId === String(route.params.volumeId)
+      ) {
+        sessionStorage.removeItem('reader-force-top');
+        requestAnimationFrame(() => {
+          setScrollTop(0);
+        });
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem('reader-force-top');
+    }
+  }
+
   const progress = loadReadingProgress();
   const saved = progress[routeKey.value];
 
   if (!saved) {
-    window.scrollTo({ top: 0 });
+    requestAnimationFrame(() => {
+      setScrollTop(0);
+    });
     return;
   }
 
   requestAnimationFrame(() => {
-    window.scrollTo({ top: saved.scrollY || 0 });
+    setScrollTop(saved.scrollY || 0);
+  });
+}
+
+function scrollToTop() {
+  requestAnimationFrame(() => {
+    setScrollTop(0);
   });
 }
 
@@ -114,7 +183,10 @@ watch(
 
 watch(
   () => [route.params.pathWord, route.params.volumeId],
-  () => loadReader()
+  () => {
+    scrollToTop();
+    loadReader();
+  }
 );
 
 function handleBeforeUnload() {
@@ -122,6 +194,7 @@ function handleBeforeUnload() {
 }
 
 onMounted(() => {
+  scrollToTop();
   loadReader();
   window.addEventListener('beforeunload', handleBeforeUnload);
 });
@@ -136,12 +209,12 @@ onBeforeUnmount(() => {
   <div class="reader-shell" :class="themeClass">
     <n-space vertical :size="16">
       <n-card class="reader-toolbar-card" :bordered="false">
-        <n-flex justify="space-between" align="center" :wrap="true" :size="16">
+        <n-flex justify="space-between" align="center" :wrap="true" :size="16" class="reader-toolbar-flex">
           <router-link :to="{ name: 'book', params: { pathWord: route.params.pathWord } }">
             <n-button tertiary>返回详情</n-button>
           </router-link>
 
-          <n-flex align="center" :wrap="true" :size="16">
+          <n-flex align="center" :wrap="true" :size="16" class="reader-controls">
             <div class="reader-control">
               <span>字号</span>
               <n-slider v-model:value="settings.fontSize" :min="14" :max="30" :step="1" style="width: 140px" />
@@ -151,7 +224,7 @@ onBeforeUnmount(() => {
               <n-slider v-model:value="settings.lineHeight" :min="1.4" :max="2.6" :step="0.1" style="width: 140px" />
             </div>
             <div class="reader-control">
-              <span>主题</span>
+              <span>模式</span>
               <n-select v-model:value="settings.theme" :options="themeOptions" style="width: 120px" />
             </div>
           </n-flex>
@@ -212,6 +285,17 @@ onBeforeUnmount(() => {
                 </template>
               </section>
             </article>
+
+            <n-flex justify="center" class="reader-end-actions">
+              <router-link
+                v-if="volume.next"
+                :to="{ name: 'reader', params: { pathWord: route.params.pathWord, volumeId: volume.next } }"
+                @click="markJumpToTop(volume.next)"
+              >
+                <n-button type="primary" size="large">{{ endActionLabel }}</n-button>
+              </router-link>
+              <n-button v-else size="large" disabled>{{ endActionLabel }}</n-button>
+            </n-flex>
           </n-card>
         </template>
 

@@ -119,21 +119,21 @@ onMounted(() => {
 <template>
   <n-space vertical :size="20">
     <n-grid :cols="24" :x-gap="16" :y-gap="16">
-      <n-grid-item :span="18">
+      <n-grid-item :span="18" :m="18" :s="24" :xs="24">
         <n-card class="hero-card" :bordered="false">
           <p class="eyebrow">DIRECT API READER</p>
           <h1 class="page-title">轻小说首页</h1>
           <p class="page-desc">直接读取上游移动端 API，浏览最新更新的轻小说。</p>
         </n-card>
       </n-grid-item>
-      <n-grid-item :span="6">
+      <n-grid-item :span="6" :m="6" :s="24" :xs="24">
         <n-card class="stat-card" :bordered="false">
           <n-statistic label="总作品数" :value="total" />
         </n-card>
       </n-grid-item>
     </n-grid>
 
-    <n-card :bordered="false">
+    <n-card class="search-card" :bordered="false">
       <n-space vertical :size="14">
         <n-flex :wrap="false" :size="12" class="search-row">
           <n-input
@@ -164,12 +164,14 @@ onMounted(() => {
       <n-space vertical :size="18">
         <n-flex justify="center">
           <n-pagination
+            class="pager"
             v-if="!isSearching"
             :page="browsePage"
             :page-count="browsePageCount"
             @update:page="handleBrowsePageChange"
           />
           <n-pagination
+            class="pager"
             v-else
             :page="searchPage"
             :page-count="searchPageCount"

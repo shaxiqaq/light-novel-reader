@@ -1,6 +1,5 @@
 <script setup>
 import {
-  darkTheme,
   NConfigProvider,
   NGlobalStyle,
   NLayout,
@@ -9,16 +8,10 @@ import {
   NMessageProvider,
   NSpace
 } from 'naive-ui';
-import { computed } from 'vue';
-import { useRoute } from 'vue-router';
-
-const route = useRoute();
-
-const isReaderRoute = computed(() => route.name === 'reader');
 </script>
 
 <template>
-  <n-config-provider :theme="isReaderRoute ? darkTheme : null">
+  <n-config-provider>
     <n-message-provider>
       <n-global-style />
       <n-layout class="app-shell" position="absolute">
