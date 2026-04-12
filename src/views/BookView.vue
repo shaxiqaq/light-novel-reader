@@ -1,5 +1,5 @@
 <script setup>
-import { NAlert, NButton, NCard, NFlex, NGrid, NGridItem, NSpace, NSpin, NTag } from 'naive-ui';
+import { NAlert, NButton, NCard, NFlex, NSpace, NSpin, NTag } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { fetchBookBundle } from '../api/novels';
@@ -49,16 +49,17 @@ watch(pathWord, loadBook);
 
       <template v-else-if="book">
         <n-card :bordered="false">
-          <n-grid :cols="24" :x-gap="20" :y-gap="16">
-            <n-grid-item :span="6" :m="6" :s="24" :xs="24">
+          <div class="detail-layout">
+            <div class="detail-cover-wrap">
               <img class="detail-cover" :src="book.cover" :alt="book.title" />
-            </n-grid-item>
-            <n-grid-item :span="18" :m="18" :s="24" :xs="24">
+            </div>
+
+            <div class="detail-main">
               <n-space vertical :size="16">
                 <div>
                   <p class="eyebrow">BOOK DETAIL</p>
-                  <h1 class="page-title">{{ book.title }}</h1>
-                  <p class="page-desc">{{ book.authors.join(' / ') || '未知作者' }}</p>
+                  <h1 class="page-title detail-title">{{ book.title }}</h1>
+                  <p class="page-desc detail-author">{{ book.authors.join(' / ') || '未知作者' }}</p>
                 </div>
 
                 <n-flex wrap="wrap" :size="10">
@@ -82,8 +83,8 @@ watch(pathWord, loadBook);
                   <n-tag v-if="book.lastChapter" type="primary" round>最新卷：{{ book.lastChapter.name }}</n-tag>
                 </n-flex>
               </n-space>
-            </n-grid-item>
-          </n-grid>
+            </div>
+          </div>
         </n-card>
 
         <n-card title="卷列表" :bordered="false">
@@ -95,8 +96,8 @@ watch(pathWord, loadBook);
               :to="{ name: 'reader', params: { pathWord: book.pathWord, volumeId: volume.id } }"
             >
               <n-card hoverable embedded class="volume-item-card">
-                <n-flex justify="space-between" align="center">
-                  <div>
+                <n-flex justify="space-between" align="center" class="volume-item-row">
+                  <div class="volume-item-main">
                     <strong>{{ volume.title }}</strong>
                     <p class="muted-text">共 {{ volume.count }} 个内容节点</p>
                   </div>

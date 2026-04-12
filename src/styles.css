@@ -198,10 +198,34 @@ a {
   background: #dcc8a5;
 }
 
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.detail-cover-wrap {
+  min-width: 0;
+}
+
+.detail-main {
+  min-width: 0;
+}
+
+.detail-title {
+  word-break: break-word;
+}
+
+.detail-author {
+  margin-top: 10px;
+}
+
 .detail-brief {
   margin: 0;
   line-height: 1.9;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .reader-shell {
@@ -301,6 +325,15 @@ a {
     display: block;
   }
 
+  .detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-cover-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
   .reader-controls {
     width: 100%;
     justify-content: space-between;
@@ -324,6 +357,11 @@ a {
 
   .page-title {
     font-size: clamp(28px, 9vw, 38px);
+  }
+
+  .detail-title {
+    font-size: clamp(24px, 8vw, 34px);
+    line-height: 1.15;
   }
 
   .page-desc {
@@ -353,6 +391,26 @@ a {
   .history-book-item img {
     width: 88px;
     height: 118px;
+  }
+
+  .detail-cover {
+    width: min(42vw, 132px);
+    max-width: none;
+    border-radius: 14px;
+  }
+
+  .volume-item-row {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 10px;
+  }
+
+  .volume-item-main {
+    min-width: 0;
+  }
+
+  .volume-item-row .n-button {
+    width: 100%;
   }
 
   .reader-shell {
