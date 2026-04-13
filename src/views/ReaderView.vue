@@ -1,6 +1,6 @@
 <script setup>
 import { ChevronLeft, ChevronRight, Settings2, X } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchVolume, fetchVolumeLines } from '../api/novels';
 import Alert from '../components/ui/alert/Alert.vue';
@@ -30,6 +30,7 @@ const items = ref([]);
 const settingsOpen = ref(false);
 const settings = reactive(loadReaderSettings());
 const appTheme = ref('light');
+let persistScrollTimer = null;
 
 const routeKey = computed(() => `${route.params.pathWord}:${route.params.volumeId}`);
 const readingStyle = computed(() => ({
@@ -56,6 +57,34 @@ function getScrollContainer() {
 
 function getCurrentScrollTop() {
   return getScrollContainer()?.scrollTop || window.scrollY || 0;
+}
+
+function getElementTop(element) {
+  return element.getBoundingClientRect().top + getCurrentScrollTop();
+}
+
+function getReaderAnchors() {
+  return Array.from(document.querySelectorAll('[data-reader-anchor-id]'));
+}
+
+function findClosestAnchor() {
+  const anchors = getReaderAnchors();
+  if (!anchors.length) {
+    return null;
+  }
+
+  const scrollTop = getCurrentScrollTop();
+  let closest = anchors[0];
+
+  for (const anchor of anchors) {
+    if (getElementTop(anchor) <= scrollTop + 12) {
+      closest = anchor;
+    } else {
+      break;
+    }
+  }
+
+  return closest;
 }
 
 function setScrollTop(top) {
@@ -116,6 +145,7 @@ async function loadReader() {
       updatedAt: new Date().toISOString()
     });
 
+    await nextTick();
     restoreScroll();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载阅读页失败。';
@@ -133,9 +163,17 @@ function persistSettings() {
 }
 
 function persistScroll() {
+  if (!volume.value) {
+    return;
+  }
+
+  const closestAnchor = findClosestAnchor();
+  const anchorTop = closestAnchor ? getElementTop(closestAnchor) : 0;
   const progress = loadReadingProgress();
   progress[routeKey.value] = {
     scrollY: getCurrentScrollTop(),
+    anchorId: closestAnchor?.getAttribute('data-reader-anchor-id') || '',
+    anchorOffset: closestAnchor ? Math.max(getCurrentScrollTop() - anchorTop, 0) : 0,
     savedAt: new Date().toISOString(),
     title: volume.value?.title || ''
   };
@@ -149,6 +187,23 @@ function persistScroll() {
       volumeTitle: volume.value.title,
       updatedAt: new Date().toISOString()
     });
+  }
+}
+
+function queuePersistScroll() {
+  if (persistScrollTimer) {
+    clearTimeout(persistScrollTimer);
+  }
+
+  persistScrollTimer = setTimeout(() => {
+    persistScroll();
+    persistScrollTimer = null;
+  }, 120);
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    persistScroll();
   }
 }
 
@@ -169,7 +224,17 @@ function restoreScroll() {
 
   const progress = loadReadingProgress();
   const saved = progress[routeKey.value];
-  requestAnimationFrame(() => setScrollTop(saved?.scrollY || 0));
+  requestAnimationFrame(() => {
+    if (saved?.anchorId) {
+      const anchor = document.querySelector(`[data-reader-anchor-id="${saved.anchorId}"]`);
+      if (anchor) {
+        setScrollTop(getElementTop(anchor) + (saved.anchorOffset || 0));
+        return;
+      }
+    }
+
+    setScrollTop(saved?.scrollY || 0);
+  });
 }
 
 watch(
@@ -191,11 +256,19 @@ onMounted(() => {
   applyAppTheme(appTheme.value);
   loadReader();
   window.addEventListener('beforeunload', persistScroll);
+  window.addEventListener('scroll', queuePersistScroll, { passive: true });
+  document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
 onBeforeUnmount(() => {
+  if (persistScrollTimer) {
+    clearTimeout(persistScrollTimer);
+    persistScrollTimer = null;
+  }
   persistScroll();
   window.removeEventListener('beforeunload', persistScroll);
+  window.removeEventListener('scroll', queuePersistScroll);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
 </script>
 
@@ -252,15 +325,25 @@ onBeforeUnmount(() => {
               :class="item.type === 'image' ? 'reader-image-block' : ''"
             >
               <template v-if="item.type === 'text'">
-                <h2 class="mb-4 text-2xl font-semibold leading-tight">{{ item.title }}</h2>
-                <p v-for="(paragraph, index) in item.text.split('\n').filter(Boolean)" :key="`${item.id}-${index}`">
+                <h2 :data-reader-anchor-id="`${item.id}-title`" class="mb-4 text-2xl font-semibold leading-tight">{{ item.title }}</h2>
+                <p
+                  v-for="(paragraph, index) in item.text.split('\n').filter(Boolean)"
+                  :key="`${item.id}-${index}`"
+                  :data-reader-anchor-id="`${item.id}-p-${index}`"
+                >
                   {{ paragraph }}
                 </p>
               </template>
 
               <template v-else-if="item.type === 'image'">
-                <h2 class="mb-4 text-2xl font-semibold leading-tight">{{ item.title }}</h2>
-                <img :src="item.url" :alt="item.title" loading="lazy" class="mx-auto rounded-2xl" />
+                <h2 :data-reader-anchor-id="`${item.id}-title`" class="mb-4 text-2xl font-semibold leading-tight">{{ item.title }}</h2>
+                <img
+                  :src="item.url"
+                  :alt="item.title"
+                  :data-reader-anchor-id="`${item.id}-image`"
+                  loading="lazy"
+                  class="mx-auto rounded-2xl"
+                />
               </template>
             </section>
           </article>
@@ -310,6 +393,26 @@ onBeforeUnmount(() => {
             <div class="space-y-2">
               <label class="text-sm font-medium">快捷切换</label>
               <div class="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  class="reader-nav-button w-full"
+                  @click="
+                    closeSettings();
+                    router.push({ name: 'home' });
+                  "
+                >
+                  回到主菜单
+                </Button>
+                <Button
+                  variant="outline"
+                  class="reader-nav-button w-full"
+                  @click="
+                    closeSettings();
+                    router.push({ name: 'book', params: { pathWord: route.params.pathWord } });
+                  "
+                >
+                  查看目录
+                </Button>
                 <Button
                   variant="outline"
                   class="reader-nav-button w-full"
