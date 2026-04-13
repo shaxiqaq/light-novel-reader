@@ -38,7 +38,7 @@ export function loadReaderSettings() {
     return {
       fontSize: 20,
       lineHeight: 1.9,
-      theme: 'paper'
+      fontFamily: 'var(--reader-font-serif)'
     };
   }
 
@@ -47,13 +47,13 @@ export function loadReaderSettings() {
     return {
       fontSize: parsed.fontSize || 20,
       lineHeight: parsed.lineHeight || 1.9,
-      theme: parsed.theme || 'paper'
+      fontFamily: parsed.fontFamily || 'var(--reader-font-serif)'
     };
   } catch {
     return {
       fontSize: 20,
       lineHeight: 1.9,
-      theme: 'paper'
+      fontFamily: 'var(--reader-font-serif)'
     };
   }
 }
@@ -118,9 +118,7 @@ export function pushVolumeHistory(entry) {
   const history = loadHistory();
   const nextVolumes = [
     entry,
-    ...history.volumes.filter(
-      (item) => !(item.pathWord === entry.pathWord && item.volumeId === entry.volumeId)
-    )
+    ...history.volumes.filter((item) => item.pathWord !== entry.pathWord)
   ].slice(0, 20);
   const nextHistory = {
     ...history,

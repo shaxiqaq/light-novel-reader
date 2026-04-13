@@ -1,22 +1,18 @@
 <script setup>
-import {
-  NAlert,
-  NButton,
-  NCard,
-  NEmpty,
-  NFlex,
-  NGrid,
-  NGridItem,
-  NInput,
-  NPagination,
-  NSpace,
-  NSpin,
-  NStatistic,
-  NTag,
-  NThing
-} from 'naive-ui';
+import { Moon, Search, Sun } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import { fetchBooks, searchBooks } from '../api/novels';
+import Alert from '../components/ui/alert/Alert.vue';
+import Badge from '../components/ui/badge/Badge.vue';
+import Button from '../components/ui/button/Button.vue';
+import Card from '../components/ui/card/Card.vue';
+import CardContent from '../components/ui/card/CardContent.vue';
+import CardDescription from '../components/ui/card/CardDescription.vue';
+import CardHeader from '../components/ui/card/CardHeader.vue';
+import CardTitle from '../components/ui/card/CardTitle.vue';
+import Input from '../components/ui/input/Input.vue';
+import Pagination from '../components/ui/pagination/Pagination.vue';
+import { applyAppTheme, loadAppTheme, saveAppTheme } from '../utils/theme';
 
 const books = ref([]);
 const total = ref(0);
@@ -31,6 +27,7 @@ const searchError = ref('');
 const searchTotal = ref(0);
 const searchOffset = ref(0);
 const searchLimit = ref(20);
+const appTheme = ref('light');
 
 const isSearching = computed(() => keyword.value.trim().length > 0);
 const displayBooks = computed(() => (isSearching.value ? searchResults.value : books.value));
@@ -41,8 +38,18 @@ const searchPageCount = computed(() => Math.max(Math.ceil(searchTotal.value / se
 
 function formatStatus(status) {
   if (status === 1) return '完结';
-  if (status === 0) return '连载';
+  if (status === 0) return '连载中';
   return '未知';
+}
+
+function updateTheme(theme) {
+  appTheme.value = theme;
+  applyAppTheme(theme);
+  saveAppTheme(theme);
+}
+
+function toggleTheme() {
+  updateTheme(appTheme.value === 'night' ? 'light' : 'night');
 }
 
 async function loadPage(nextOffset = 0) {
@@ -64,7 +71,6 @@ async function loadPage(nextOffset = 0) {
 
 async function runSearch(nextOffset = 0) {
   const query = keyword.value.trim();
-
   if (!query) {
     searchResults.value = [];
     searchError.value = '';
@@ -103,111 +109,139 @@ function clearSearch() {
   searchOffset.value = 0;
 }
 
-function handleBrowsePageChange(page) {
-  loadPage((page - 1) * limit.value);
-}
-
-function handleSearchPageChange(page) {
-  runSearch((page - 1) * searchLimit.value);
-}
-
 onMounted(() => {
+  appTheme.value = loadAppTheme();
+  applyAppTheme(appTheme.value);
   loadPage(0);
 });
 </script>
 
 <template>
-  <n-space vertical :size="20">
-    <n-grid :cols="24" :x-gap="16" :y-gap="16">
-      <n-grid-item :span="18" :m="18" :s="24" :xs="24">
-        <n-card class="hero-card" :bordered="false">
-          <p class="eyebrow">DIRECT API READER</p>
-          <h1 class="page-title">轻小说首页</h1>
-          <p class="page-desc">直接读取上游移动端 API，浏览最新更新的轻小说。</p>
-        </n-card>
-      </n-grid-item>
-      <n-grid-item :span="6" :m="6" :s="24" :xs="24">
-        <n-card class="stat-card" :bordered="false">
-          <n-statistic label="总作品数" :value="total" />
-        </n-card>
-      </n-grid-item>
-    </n-grid>
+  <div class="space-y-5">
+    <div class="grid gap-4 lg:grid-cols-[1fr_220px]">
+      <Card class="border-amber-200/60 bg-[linear-gradient(120deg,rgba(255,248,236,0.98),rgba(248,236,209,0.9))]">
+        <CardHeader>
+          <p class="text-xs uppercase tracking-[0.32em] text-amber-700/80">Direct API Reader</p>
+          <CardTitle class="text-4xl sm:text-5xl">轻小说首页</CardTitle>
+          <CardDescription class="text-base leading-7">直接读取上游移动端 API，浏览最新更新的轻小说。</CardDescription>
+        </CardHeader>
+      </Card>
 
-    <n-card class="search-card" :bordered="false">
-      <n-space vertical :size="14">
-        <n-flex :wrap="false" :size="12" class="search-row">
-          <n-input
-            v-model:value="keyword"
-            clearable
-            size="large"
-            placeholder="搜索书名、作者或 path_word"
-            @keydown.enter.prevent="runSearch()"
-          />
-          <n-button type="primary" size="large" :loading="searchLoading" @click="runSearch()">搜索</n-button>
-          <n-button v-if="isSearching" size="large" @click="clearSearch">清空</n-button>
-        </n-flex>
+      <Card>
+        <CardHeader class="pb-3">
+          <CardDescription>总作品数</CardDescription>
+          <CardTitle class="text-5xl">{{ total }}</CardTitle>
+        </CardHeader>
+      </Card>
+    </div>
 
-        <n-alert v-if="isSearching" type="info" :show-icon="false">
+    <Card>
+      <CardContent class="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm font-semibold">全局主题</p>
+          <p class="text-sm text-muted-foreground">主页和阅读页共用同一套黑夜模式。</p>
+        </div>
+        <div class="flex gap-3">
+          <Button :variant="appTheme === 'light' ? 'default' : 'outline'" @click="updateTheme('light')">
+            <Sun class="mr-1 size-4" />
+            日间
+          </Button>
+          <Button :variant="appTheme === 'night' ? 'default' : 'outline'" @click="updateTheme('night')">
+            <Moon class="mr-1 size-4" />
+            黑夜
+          </Button>
+          <Button variant="ghost" @click="toggleTheme">切换</Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader class="pb-4">
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <div class="relative flex-1">
+            <Search class="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              v-model="keyword"
+              class="pl-10"
+              placeholder="搜索书名、作者或 path_word"
+              @keydown.enter.prevent="runSearch()"
+            />
+          </div>
+          <div class="flex gap-3 sm:w-auto">
+            <Button class="flex-1 sm:flex-none" :disabled="searchLoading" @click="runSearch()">
+              {{ searchLoading ? '搜索中...' : '搜索' }}
+            </Button>
+            <Button v-if="isSearching" class="flex-1 sm:flex-none" variant="outline" @click="clearSearch">清空</Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent class="space-y-3">
+        <Alert v-if="isSearching" variant="info">
           已切换为上游搜索接口。当前第 {{ searchPage }} / {{ searchPageCount }} 页，共 {{ searchTotal }} 条结果。
-        </n-alert>
-        <n-alert v-else type="default" :show-icon="false">
-          最近浏览和继续阅读已经移到独立的“历史记录”页面。
-          <router-link class="inline-link" :to="{ name: 'history' }">前往查看</router-link>
-        </n-alert>
-      </n-space>
-    </n-card>
+        </Alert>
+        <Alert v-else>
+          最近浏览和继续阅读已经移动到独立的“历史记录”页面。
+          <router-link class="ml-2 font-semibold text-primary hover:underline" :to="{ name: 'history' }">前往查看</router-link>
+        </Alert>
+      </CardContent>
+    </Card>
 
-    <n-alert v-if="error" type="error" :show-icon="false">{{ error }}</n-alert>
-    <n-alert v-if="searchError" type="error" :show-icon="false">{{ searchError }}</n-alert>
+    <Alert v-if="error" variant="error">{{ error }}</Alert>
+    <Alert v-if="searchError" variant="error">{{ searchError }}</Alert>
 
-    <n-card :bordered="false">
-      <n-space vertical :size="18">
-        <n-flex justify="center">
-          <n-pagination
-            class="pager"
-            v-if="!isSearching"
-            :page="browsePage"
-            :page-count="browsePageCount"
-            @update:page="handleBrowsePageChange"
-          />
-          <n-pagination
-            class="pager"
-            v-else
-            :page="searchPage"
-            :page-count="searchPageCount"
-            @update:page="handleSearchPageChange"
-          />
-        </n-flex>
+    <Card>
+      <CardHeader class="pb-4">
+        <Pagination
+          v-if="!isSearching"
+          :page="browsePage"
+          :page-count="browsePageCount"
+          @update:page="(page) => loadPage((page - 1) * limit)"
+        />
+        <Pagination
+          v-else
+          :page="searchPage"
+          :page-count="searchPageCount"
+          @update:page="(page) => runSearch((page - 1) * searchLimit)"
+        />
+      </CardHeader>
 
-        <n-spin :show="loading || searchLoading">
-          <template v-if="displayBooks.length">
-            <div class="book-grid">
-              <router-link
-                v-for="book in displayBooks"
-                :key="book.pathWord"
-                class="book-link"
-                :to="{ name: 'book', params: { pathWord: book.pathWord } }"
-              >
-                <n-card class="book-card" hoverable>
-                  <img class="book-cover" :src="book.cover" :alt="book.title" loading="lazy" />
-                  <n-thing class="book-thing">
-                    <template #header>{{ book.title }}</template>
-                    <template #description>
-                      {{ book.authors.join(' / ') || '未知作者' }}
-                    </template>
-                    <n-space size="small" class="book-meta-row">
-                      <n-tag size="small" round>{{ formatStatus(book.status) }}</n-tag>
-                      <n-tag size="small" round type="warning">热度 {{ book.popularity }}</n-tag>
-                    </n-space>
-                    <p class="book-updated">{{ book.updatedAt ? `更新于 ${book.updatedAt}` : '来自搜索结果' }}</p>
-                  </n-thing>
-                </n-card>
-              </router-link>
-            </div>
-          </template>
-          <n-empty v-else description="没有找到匹配的作品，请换个关键词试试。" />
-        </n-spin>
-      </n-space>
-    </n-card>
-  </n-space>
+      <CardContent>
+        <div v-if="loading || searchLoading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div v-for="n in 8" :key="n" class="overflow-hidden rounded-3xl border border-border/70 bg-background p-4">
+            <div class="aspect-[328/422] animate-pulse rounded-2xl bg-secondary" />
+            <div class="mt-4 h-5 animate-pulse rounded bg-secondary" />
+            <div class="mt-2 h-4 w-2/3 animate-pulse rounded bg-secondary" />
+          </div>
+        </div>
+
+        <div v-else-if="displayBooks.length" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <router-link
+            v-for="book in displayBooks"
+            :key="book.pathWord"
+            :to="{ name: 'book', params: { pathWord: book.pathWord } }"
+            class="group block"
+          >
+            <Card class="h-full overflow-hidden transition-transform duration-200 group-hover:-translate-y-1">
+              <CardContent class="p-4">
+                <img class="aspect-[328/422] w-full rounded-2xl object-cover" :src="book.cover" :alt="book.title" loading="lazy" />
+                <div class="mt-4 space-y-3">
+                  <h2 class="line-clamp-2 text-lg font-semibold leading-snug">{{ book.title }}</h2>
+                  <p class="text-sm text-muted-foreground">{{ book.authors.join(' / ') || '未知作者' }}</p>
+                  <div class="flex flex-wrap gap-2">
+                    <Badge variant="soft">{{ formatStatus(book.status) }}</Badge>
+                    <Badge variant="outline">热度 {{ book.popularity }}</Badge>
+                  </div>
+                  <p class="text-sm text-muted-foreground">{{ book.updatedAt ? `更新于 ${book.updatedAt}` : '来自搜索结果' }}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </router-link>
+        </div>
+
+        <div v-else class="rounded-3xl border border-dashed border-border/70 px-6 py-14 text-center text-muted-foreground">
+          没有找到匹配的作品，请换一个关键词试试。
+        </div>
+      </CardContent>
+    </Card>
+  </div>
 </template>
