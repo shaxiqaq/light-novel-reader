@@ -7,10 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "cf:dev": "wrangler dev",
-    "cf:deploy": "wrangler deploy",
-    "cf:d1:init": "wrangler d1 execute light-novel-reader-progress --file=./worker/schema.sql",
-    "cf:d1:init:remote": "wrangler d1 execute light-novel-reader-progress --remote --file=./worker/schema.sql"
+    "cf:dev": "wrangler dev --config worker/wrangler.jsonc",
+    "cf:deploy": "wrangler deploy --config worker/wrangler.jsonc",
+    "cf:d1:init": "wrangler d1 execute light-novel-reader-progress --config worker/wrangler.jsonc --file=./worker/schema.sql",
+    "cf:d1:init:remote": "wrangler d1 execute light-novel-reader-progress --config worker/wrangler.jsonc --remote --file=./worker/schema.sql"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

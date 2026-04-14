@@ -1,7 +1,7 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "light-novel-reader-progress",
-  "main": "worker/src/index.js",
+  "main": "src/index.js",
   "compatibility_date": "2025-04-15",
   "d1_databases": [
     {
