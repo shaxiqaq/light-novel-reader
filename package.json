@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
+    "cf:d1:init": "wrangler d1 execute light-novel-reader-progress --file=./worker/schema.sql",
+    "cf:d1:init:remote": "wrangler d1 execute light-novel-reader-progress --remote --file=./worker/schema.sql"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -20,6 +24,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-vue": "^5.2.4",
     "tailwindcss": "^4.2.2",
-    "vite": "^6.2.6"
+    "vite": "^6.2.6",
+    "wrangler": "^4.82.2"
   }
 }

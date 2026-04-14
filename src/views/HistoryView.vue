@@ -1,5 +1,5 @@
 <script setup>
-import { BookMarked, History, Trash2 } from 'lucide-vue-next';
+import { BookMarked, Cloud, History, Trash2 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import Alert from '../components/ui/alert/Alert.vue';
 import Button from '../components/ui/button/Button.vue';
@@ -8,9 +8,12 @@ import CardContent from '../components/ui/card/CardContent.vue';
 import CardDescription from '../components/ui/card/CardDescription.vue';
 import CardHeader from '../components/ui/card/CardHeader.vue';
 import CardTitle from '../components/ui/card/CardTitle.vue';
+import { isCloudSyncEnabled, listCloudProgress } from '../services/cloudProgress';
 import { loadHistory, saveHistory } from '../utils/reader';
 
 const history = ref({ books: [], volumes: [] });
+const cloudSyncReady = isCloudSyncEnabled();
+const cloudLoading = ref(false);
 
 const uniqueVolumeHistory = computed(() => {
   const seen = new Set();
@@ -26,23 +29,57 @@ const uniqueVolumeHistory = computed(() => {
 const totalHistoryCount = computed(() => history.value.books.length + uniqueVolumeHistory.value.length);
 const hasHistory = computed(() => history.value.books.length > 0 || uniqueVolumeHistory.value.length > 0);
 
-function refreshHistory() {
-  const rawHistory = loadHistory();
+function dedupeVolumes(volumes) {
   const seen = new Set();
-  const cleanedVolumes = rawHistory.volumes.filter((item) => {
+  return volumes.filter((item) => {
     if (!item?.pathWord || seen.has(item.pathWord)) {
       return false;
     }
     seen.add(item.pathWord);
     return true;
   });
+}
+
+async function refreshHistory() {
+  const rawHistory = loadHistory();
+  let mergedVolumes = dedupeVolumes(rawHistory.volumes || []);
+
+  if (cloudSyncReady) {
+    cloudLoading.value = true;
+    try {
+      const cloudProgress = await listCloudProgress();
+      const cloudVolumes = cloudProgress.map((item) => ({
+        pathWord: item.bookId,
+        bookTitle: item.bookTitle,
+        volumeId: item.volumeId,
+        volumeTitle: item.volumeTitle,
+        updatedAt: item.updatedAtClient
+      }));
+
+      const mergedMap = new Map();
+      for (const item of [...cloudVolumes, ...mergedVolumes]) {
+        const current = mergedMap.get(item.pathWord);
+        const currentTime = current?.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+        const nextTime = item?.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+        if (!current || nextTime >= currentTime) {
+          mergedMap.set(item.pathWord, item);
+        }
+      }
+      mergedVolumes = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
+      );
+    } catch (err) {
+      console.error('读取云端继续阅读失败:', err);
+    } finally {
+      cloudLoading.value = false;
+    }
+  }
 
   history.value = {
     books: rawHistory.books || [],
-    volumes: cleanedVolumes
+    volumes: mergedVolumes
   };
 
-  // Clean up old duplicated volume history written by previous versions.
   saveHistory(history.value);
 }
 
@@ -72,7 +109,16 @@ onMounted(refreshHistory);
     <div class="grid gap-4 lg:grid-cols-[1fr_220px]">
       <Card class="bg-[linear-gradient(120deg,rgba(255,248,236,0.98),rgba(248,236,209,0.9))]">
         <CardHeader>
-          <p class="text-xs uppercase tracking-[0.32em] text-amber-700/80">History</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="text-xs uppercase tracking-[0.32em] text-amber-700/80">History</p>
+            <span
+              v-if="cloudSyncReady"
+              class="inline-flex items-center gap-1 rounded-full border border-border/70 px-2 py-1 text-xs text-muted-foreground"
+            >
+              <Cloud class="size-3.5" />
+              云端继续阅读已开启
+            </span>
+          </div>
           <CardTitle class="text-4xl sm:text-5xl">历史记录</CardTitle>
           <CardDescription class="text-base leading-7">查看最近浏览过的书籍，以及每本书最近一次继续阅读的位置。</CardDescription>
         </CardHeader>
@@ -91,6 +137,10 @@ onMounted(refreshHistory);
         </CardContent>
       </Card>
     </div>
+
+    <Alert v-if="cloudLoading" variant="info">正在同步云端阅读记录…</Alert>
+    <Alert v-else-if="cloudSyncReady" variant="info">继续阅读会优先使用 LeanCloud 中保存的最新进度。</Alert>
+    <Alert v-else variant="info">未配置 LeanCloud 环境变量，当前历史记录仅保存在本地。</Alert>
 
     <template v-if="hasHistory">
       <div class="grid gap-4 xl:grid-cols-2">

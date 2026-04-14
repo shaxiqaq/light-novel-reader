@@ -1,5 +1,5 @@
 <script setup>
-import { ChevronLeft, ChevronRight, Settings2, X } from 'lucide-vue-next';
+import { ChevronLeft, ChevronRight, Cloud, Settings2, X } from 'lucide-vue-next';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchVolume, fetchVolumeLines } from '../api/novels';
@@ -9,6 +9,7 @@ import Card from '../components/ui/card/Card.vue';
 import CardContent from '../components/ui/card/CardContent.vue';
 import Select from '../components/ui/select/Select.vue';
 import Slider from '../components/ui/slider/Slider.vue';
+import { fetchCloudProgress, isCloudSyncEnabled, saveCloudProgress } from '../services/cloudProgress';
 import {
   loadReaderSettings,
   loadReadingProgress,
@@ -30,7 +31,10 @@ const items = ref([]);
 const settingsOpen = ref(false);
 const settings = reactive(loadReaderSettings());
 const appTheme = ref('light');
+const cloudSyncReady = isCloudSyncEnabled();
+
 let persistScrollTimer = null;
+let persistCloudTimer = null;
 
 const routeKey = computed(() => `${route.params.pathWord}:${route.params.volumeId}`);
 const readingStyle = computed(() => ({
@@ -110,7 +114,9 @@ function closeSettings() {
 }
 
 function goToVolume(targetVolumeId) {
-  if (!targetVolumeId) return;
+  if (!targetVolumeId) {
+    return;
+  }
 
   markJumpToTop(targetVolumeId);
   closeSettings();
@@ -126,68 +132,81 @@ function updateAppTheme(value) {
   saveAppTheme(value);
 }
 
-async function loadReader() {
-  loading.value = true;
-  error.value = '';
-
-  try {
-    const data = await fetchVolume(route.params.pathWord, route.params.volumeId);
-    const lines = await fetchVolumeLines(data.volume.txtAddr, data.volume.txtEncoding);
-    book.value = data.book;
-    volume.value = data.volume;
-    items.value = normalizeReaderItems(data.volume.contents, lines);
-
-    pushVolumeHistory({
-      pathWord: data.book.pathWord,
-      bookTitle: data.book.title,
-      volumeId: data.volume.id,
-      volumeTitle: data.volume.title,
-      updatedAt: new Date().toISOString()
-    });
-
-    await nextTick();
-    restoreScroll();
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载阅读页失败。';
-  } finally {
-    loading.value = false;
-  }
-}
-
-function persistSettings() {
-  saveReaderSettings({
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
-    fontFamily: settings.fontFamily || 'var(--reader-font-serif)'
-  });
-}
-
-function persistScroll() {
-  if (!volume.value) {
-    return;
+function buildProgressSnapshot() {
+  if (!book.value || !volume.value) {
+    return null;
   }
 
   const closestAnchor = findClosestAnchor();
   const anchorTop = closestAnchor ? getElementTop(closestAnchor) : 0;
-  const progress = loadReadingProgress();
-  progress[routeKey.value] = {
+
+  return {
+    bookId: book.value.pathWord,
+    bookTitle: book.value.title,
+    volumeId: String(volume.value.id),
+    volumeTitle: volume.value.title,
     scrollY: getCurrentScrollTop(),
     anchorId: closestAnchor?.getAttribute('data-reader-anchor-id') || '',
     anchorOffset: closestAnchor ? Math.max(getCurrentScrollTop() - anchorTop, 0) : 0,
     savedAt: new Date().toISOString(),
-    title: volume.value?.title || ''
+    title: volume.value.title
+  };
+}
+
+function writeLocalProgress(snapshot) {
+  const progress = loadReadingProgress();
+  progress[routeKey.value] = {
+    scrollY: snapshot.scrollY,
+    anchorId: snapshot.anchorId,
+    anchorOffset: snapshot.anchorOffset,
+    savedAt: snapshot.savedAt,
+    title: snapshot.title
   };
   saveReadingProgress(progress);
 
-  if (book.value && volume.value) {
-    pushVolumeHistory({
-      pathWord: book.value.pathWord,
-      bookTitle: book.value.title,
-      volumeId: volume.value.id,
-      volumeTitle: volume.value.title,
-      updatedAt: new Date().toISOString()
-    });
+  pushVolumeHistory({
+    pathWord: snapshot.bookId,
+    bookTitle: snapshot.bookTitle,
+    volumeId: snapshot.volumeId,
+    volumeTitle: snapshot.volumeTitle,
+    updatedAt: snapshot.savedAt
+  });
+}
+
+function queuePersistCloud(snapshot) {
+  if (!cloudSyncReady) {
+    return;
   }
+
+  if (persistCloudTimer) {
+    clearTimeout(persistCloudTimer);
+  }
+
+  persistCloudTimer = setTimeout(() => {
+    saveCloudProgress({
+      bookId: snapshot.bookId,
+      bookTitle: snapshot.bookTitle,
+      volumeId: snapshot.volumeId,
+      volumeTitle: snapshot.volumeTitle,
+      anchorId: snapshot.anchorId,
+      anchorOffset: snapshot.anchorOffset,
+      scrollY: snapshot.scrollY,
+      updatedAtClient: snapshot.savedAt
+    }).catch((err) => {
+      console.error('云端阅读进度保存失败:', err);
+    });
+    persistCloudTimer = null;
+  }, 600);
+}
+
+function persistScroll() {
+  const snapshot = buildProgressSnapshot();
+  if (!snapshot) {
+    return;
+  }
+
+  writeLocalProgress(snapshot);
+  queuePersistCloud(snapshot);
 }
 
 function queuePersistScroll() {
@@ -207,7 +226,7 @@ function handleVisibilityChange() {
   }
 }
 
-function restoreScroll() {
+async function restoreScroll(bookId) {
   const forceTopRaw = sessionStorage.getItem('reader-force-top');
   if (forceTopRaw) {
     try {
@@ -222,8 +241,33 @@ function restoreScroll() {
     }
   }
 
-  const progress = loadReadingProgress();
-  const saved = progress[routeKey.value];
+  const localProgress = loadReadingProgress();
+  let saved = localProgress[routeKey.value];
+
+  if (cloudSyncReady && bookId) {
+    try {
+      const cloudProgress = await fetchCloudProgress(bookId);
+      if (cloudProgress && String(cloudProgress.volumeId) === String(route.params.volumeId)) {
+        const localTime = saved?.savedAt ? new Date(saved.savedAt).getTime() : 0;
+        const cloudTime = cloudProgress.updatedAtClient ? new Date(cloudProgress.updatedAtClient).getTime() : 0;
+
+        if (!saved || cloudTime >= localTime) {
+          saved = {
+            scrollY: cloudProgress.scrollY,
+            anchorId: cloudProgress.anchorId,
+            anchorOffset: cloudProgress.anchorOffset,
+            savedAt: cloudProgress.updatedAtClient,
+            title: cloudProgress.volumeTitle || ''
+          };
+          localProgress[routeKey.value] = saved;
+          saveReadingProgress(localProgress);
+        }
+      }
+    } catch (err) {
+      console.error('云端阅读进度读取失败:', err);
+    }
+  }
+
   requestAnimationFrame(() => {
     if (saved?.anchorId) {
       const anchor = document.querySelector(`[data-reader-anchor-id="${saved.anchorId}"]`);
@@ -234,6 +278,42 @@ function restoreScroll() {
     }
 
     setScrollTop(saved?.scrollY || 0);
+  });
+}
+
+async function loadReader() {
+  loading.value = true;
+  error.value = '';
+
+  try {
+    const data = await fetchVolume(route.params.pathWord, route.params.volumeId);
+    const lines = await fetchVolumeLines(data.volume.txtAddr, data.volume.txtEncoding);
+    book.value = data.book;
+    volume.value = data.volume;
+    items.value = normalizeReaderItems(data.volume.contents, lines);
+
+    pushVolumeHistory({
+      pathWord: data.book.pathWord,
+      bookTitle: data.book.title,
+      volumeId: String(data.volume.id),
+      volumeTitle: data.volume.title,
+      updatedAt: new Date().toISOString()
+    });
+
+    await nextTick();
+    await restoreScroll(data.book.pathWord);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '加载阅读页失败。';
+  } finally {
+    loading.value = false;
+  }
+}
+
+function persistSettings() {
+  saveReaderSettings({
+    fontSize: settings.fontSize,
+    lineHeight: settings.lineHeight,
+    fontFamily: settings.fontFamily || 'var(--reader-font-serif)'
   });
 }
 
@@ -265,6 +345,11 @@ onBeforeUnmount(() => {
     clearTimeout(persistScrollTimer);
     persistScrollTimer = null;
   }
+  if (persistCloudTimer) {
+    clearTimeout(persistCloudTimer);
+    persistCloudTimer = null;
+  }
+
   persistScroll();
   window.removeEventListener('beforeunload', persistScroll);
   window.removeEventListener('scroll', queuePersistScroll);
@@ -280,7 +365,16 @@ onBeforeUnmount(() => {
       <Card class="reader-panel">
         <CardContent class="space-y-4 p-6 sm:p-8">
           <div>
-            <p class="text-xs uppercase tracking-[0.32em] text-amber-700/80">Reader</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-xs uppercase tracking-[0.32em] text-amber-700/80">Reader</p>
+              <span
+                v-if="cloudSyncReady"
+                class="inline-flex items-center gap-1 rounded-full border border-border/70 px-2 py-1 text-xs text-muted-foreground"
+              >
+                <Cloud class="size-3.5" />
+                云端同步已开启
+              </span>
+            </div>
             <h1 class="mt-3 text-3xl font-bold leading-tight sm:text-5xl">{{ book.title }}</h1>
             <p class="mt-3 text-base text-muted-foreground">{{ volume.title }}</p>
           </div>
@@ -389,6 +483,9 @@ onBeforeUnmount(() => {
                 <X class="size-4" />
               </Button>
             </div>
+
+            <Alert v-if="cloudSyncReady" variant="info">当前阅读进度会自动同步到 LeanCloud。</Alert>
+            <Alert v-else variant="info">未配置 LeanCloud 环境变量，当前仍只会保存在本地。</Alert>
 
             <div class="space-y-2">
               <label class="text-sm font-medium">快捷切换</label>

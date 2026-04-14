@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "light-novel-reader-progress",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2025-04-15",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "light-novel-reader-progress",
+      "database_id": "e0968d16-8b61-475f-b152-e091911f6c45"
+    }
+  ]
+}
