@@ -1,7 +1,9 @@
+import { cloudSyncConfig } from '../config/cloudSync';
+
 function getConfig() {
   return {
-    apiBase: (import.meta.env.VITE_CLOUDFLARE_PROGRESS_API || '').replace(/\/$/, ''),
-    syncKey: import.meta.env.VITE_READING_SYNC_KEY || ''
+    apiBase: ((import.meta.env.VITE_CLOUDFLARE_PROGRESS_API || cloudSyncConfig.apiBase || '')).replace(/\/$/, ''),
+    syncKey: import.meta.env.VITE_READING_SYNC_KEY || cloudSyncConfig.syncKey || ''
   };
 }
 
