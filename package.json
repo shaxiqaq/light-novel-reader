@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "site:deploy": "wrangler deploy --config site/wrangler.jsonc",
     "cf:dev": "wrangler dev --config worker/wrangler.jsonc",
     "cf:deploy": "wrangler deploy --config worker/wrangler.jsonc",
     "cf:d1:init": "wrangler d1 execute light-novel-reader-progress --config worker/wrangler.jsonc --file=./worker/schema.sql",
