@@ -9,6 +9,7 @@ import Card from '../components/ui/card/Card.vue';
 import CardContent from '../components/ui/card/CardContent.vue';
 import Select from '../components/ui/select/Select.vue';
 import Slider from '../components/ui/slider/Slider.vue';
+import { authState } from '../services/auth';
 import { fetchCloudProgress, isCloudSyncEnabled, saveCloudProgress } from '../services/cloudProgress';
 import {
   loadReaderSettings,
@@ -31,7 +32,7 @@ const items = ref([]);
 const settingsOpen = ref(false);
 const settings = reactive(loadReaderSettings());
 const appTheme = ref('light');
-const cloudSyncReady = isCloudSyncEnabled();
+const cloudSyncReady = computed(() => isCloudSyncEnabled() && Boolean(authState.user));
 
 let persistScrollTimer = null;
 let persistCloudTimer = null;
@@ -174,7 +175,7 @@ function writeLocalProgress(snapshot) {
 }
 
 function queuePersistCloud(snapshot) {
-  if (!cloudSyncReady) {
+  if (!cloudSyncReady.value) {
     return;
   }
 
@@ -244,7 +245,7 @@ async function restoreScroll(bookId) {
   const localProgress = loadReadingProgress();
   let saved = localProgress[routeKey.value];
 
-  if (cloudSyncReady && bookId) {
+  if (cloudSyncReady.value && bookId) {
     try {
       const cloudProgress = await fetchCloudProgress(bookId);
       if (cloudProgress && String(cloudProgress.volumeId) === String(route.params.volumeId)) {
@@ -328,6 +329,13 @@ watch(
   () => {
     closeSettings();
     loadReader();
+  }
+);
+
+watch(
+  () => authState.user?.id,
+  (userId) => {
+    if (userId && book.value) restoreScroll(book.value.pathWord);
   }
 );
 
@@ -484,8 +492,8 @@ onBeforeUnmount(() => {
               </Button>
             </div>
 
-            <Alert v-if="cloudSyncReady" variant="info">当前阅读进度会自动同步到 LeanCloud。</Alert>
-            <Alert v-else variant="info">未配置 LeanCloud 环境变量，当前仍只会保存在本地。</Alert>
+            <Alert v-if="cloudSyncReady" variant="info">当前阅读进度会自动同步到你的账号。</Alert>
+            <Alert v-else variant="info">登录账号后可以同步阅读进度，当前仍会保存在本地。</Alert>
 
             <div class="space-y-2">
               <label class="text-sm font-medium">快捷切换</label>

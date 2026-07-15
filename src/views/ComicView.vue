@@ -11,6 +11,7 @@ import CardContent from '../components/ui/card/CardContent.vue';
 import CardDescription from '../components/ui/card/CardDescription.vue';
 import CardHeader from '../components/ui/card/CardHeader.vue';
 import CardTitle from '../components/ui/card/CardTitle.vue';
+import FavoriteButton from '../components/FavoriteButton.vue';
 
 const route = useRoute();
 const comic = ref(null);
@@ -63,6 +64,14 @@ watch(pathWord, loadComic);
               <Badge variant="outline">共 {{ chapters.length }} 话</Badge>
               <Badge v-if="comic.popularity" variant="outline">热度 {{ comic.popularity }}</Badge>
             </div>
+
+            <FavoriteButton
+              content-type="comic"
+              :path-word="comic.pathWord"
+              :title="comic.title"
+              :cover="comic.cover"
+              :authors="comic.authors"
+            />
 
             <div v-if="comic.themes.length" class="flex flex-wrap gap-2">
               <Badge v-for="theme in comic.themes" :key="theme" variant="outline">{{ theme }}</Badge>

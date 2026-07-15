@@ -2,20 +2,18 @@ import { cloudSyncConfig } from '../config/cloudSync';
 
 function getConfig() {
   return {
-    apiBase: ((import.meta.env.VITE_CLOUDFLARE_PROGRESS_API || cloudSyncConfig.apiBase || '')).replace(/\/$/, ''),
-    syncKey: import.meta.env.VITE_READING_SYNC_KEY || cloudSyncConfig.syncKey || ''
+    apiBase: ((import.meta.env.VITE_CLOUDFLARE_PROGRESS_API || cloudSyncConfig.apiBase || '')).replace(/\/$/, '')
   };
 }
 
 export function isCloudSyncEnabled() {
   const config = getConfig();
-  return Boolean(config.apiBase && config.syncKey);
+  return Boolean(config.apiBase);
 }
 
 function buildUrl(path, params = {}) {
-  const { apiBase, syncKey } = getConfig();
+  const { apiBase } = getConfig();
   const url = new URL(`${apiBase}${path}`);
-  url.searchParams.set('syncKey', syncKey);
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -46,7 +44,6 @@ function normalizeRecord(record) {
 
   return {
     objectId: record.id || '',
-    syncKey: record.syncKey || '',
     bookId: record.bookId || '',
     bookTitle: record.bookTitle || '',
     volumeId: String(record.volumeId || ''),
@@ -63,7 +60,7 @@ export async function fetchCloudProgress(bookId) {
     return null;
   }
 
-  const response = await fetch(buildUrl('/api/progress', { bookId }));
+  const response = await fetch(buildUrl('/api/progress', { bookId }), { credentials: 'include' });
   const data = await readJson(response, 'Loading cloud progress');
   return normalizeRecord(data.record);
 }
@@ -73,7 +70,7 @@ export async function listCloudProgress() {
     return [];
   }
 
-  const response = await fetch(buildUrl('/api/progress/list'));
+  const response = await fetch(buildUrl('/api/progress/list'), { credentials: 'include' });
   const data = await readJson(response, 'Loading cloud progress list');
   return (data.records || []).map(normalizeRecord).filter(Boolean);
 }
@@ -83,14 +80,13 @@ export async function saveCloudProgress(progress) {
     return null;
   }
 
-  const { syncKey } = getConfig();
   const response = await fetch(buildUrl('/api/progress'), {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      syncKey,
       bookId: progress.bookId,
       bookTitle: progress.bookTitle,
       volumeId: String(progress.volumeId || ''),

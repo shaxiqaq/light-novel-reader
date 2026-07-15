@@ -7,6 +7,8 @@ import MangaHomeView from '../views/MangaHomeView.vue';
 import ComicView from '../views/ComicView.vue';
 import ComicReaderView from '../views/ComicReaderView.vue';
 import LandingView from '../views/LandingView.vue';
+import AccountView from '../views/AccountView.vue';
+import FavoritesView from '../views/FavoritesView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -28,6 +30,18 @@ const router = createRouter({
       name: 'history',
       component: HistoryView,
       meta: { section: 'novel' }
+    },
+    {
+      path: '/account',
+      name: 'account',
+      component: AccountView,
+      meta: { section: 'landing' }
+    },
+    {
+      path: '/favorites',
+      name: 'favorites',
+      component: FavoritesView,
+      meta: { section: 'landing' }
     },
     {
       path: '/manga',

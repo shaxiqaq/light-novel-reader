@@ -1,8 +1,9 @@
 <script setup>
-import { Moon, Sun } from 'lucide-vue-next';
+import { Heart, LogIn, Moon, Sun, UserCircle } from 'lucide-vue-next';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Button from './components/ui/button/Button.vue';
+import { authState, refreshSession } from './services/auth';
 import { applyAppTheme, loadAppTheme, saveAppTheme } from './utils/theme';
 
 const route = useRoute();
@@ -29,6 +30,7 @@ function toggleTheme() {
 onMounted(() => {
   appTheme.value = loadAppTheme();
   applyAppTheme(appTheme.value);
+  refreshSession();
 });
 
 watch(appTheme, (value) => {
@@ -55,6 +57,19 @@ watch(
         <router-link :to="brandRoute" class="text-2xl font-bold tracking-tight text-foreground">{{ brandTitle }}</router-link>
 
         <div class="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-end">
+          <router-link :to="{ name: 'favorites' }">
+            <Button variant="outline" size="sm">
+              <Heart class="mr-1 size-4" />
+              收藏
+            </Button>
+          </router-link>
+          <router-link :to="{ name: 'account' }">
+            <Button variant="outline" size="sm">
+              <UserCircle v-if="authState.user" class="mr-1 size-4" />
+              <LogIn v-else class="mr-1 size-4" />
+              {{ authState.user?.name || (authState.loading ? '检查登录...' : '登录') }}
+            </Button>
+          </router-link>
           <Button variant="outline" size="sm" @click="toggleTheme">
             <Sun v-if="appTheme === 'night'" class="mr-1 size-4" />
             <Moon v-else class="mr-1 size-4" />

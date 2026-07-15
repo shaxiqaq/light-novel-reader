@@ -10,6 +10,7 @@ import CardContent from '../components/ui/card/CardContent.vue';
 import CardDescription from '../components/ui/card/CardDescription.vue';
 import CardHeader from '../components/ui/card/CardHeader.vue';
 import CardTitle from '../components/ui/card/CardTitle.vue';
+import FavoriteButton from '../components/FavoriteButton.vue';
 import { pushBookHistory } from '../utils/reader';
 
 const route = useRoute();
@@ -72,6 +73,14 @@ watch(pathWord, loadBook);
               <Badge variant="outline">热度 {{ book.popularity }}</Badge>
               <Badge variant="outline">更新 {{ book.updatedAt }}</Badge>
             </div>
+
+            <FavoriteButton
+              content-type="novel"
+              :path-word="book.pathWord"
+              :title="book.title"
+              :cover="book.cover"
+              :authors="book.authors"
+            />
 
             <div v-if="book.themes.length" class="flex flex-wrap gap-2">
               <Badge v-for="theme in book.themes" :key="theme" variant="outline">{{ theme }}</Badge>

@@ -1,6 +1,6 @@
 <script setup>
 import { BookMarked, Cloud, History, Trash2 } from 'lucide-vue-next';
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Alert from '../components/ui/alert/Alert.vue';
 import Button from '../components/ui/button/Button.vue';
 import Card from '../components/ui/card/Card.vue';
@@ -8,11 +8,12 @@ import CardContent from '../components/ui/card/CardContent.vue';
 import CardDescription from '../components/ui/card/CardDescription.vue';
 import CardHeader from '../components/ui/card/CardHeader.vue';
 import CardTitle from '../components/ui/card/CardTitle.vue';
+import { authState } from '../services/auth';
 import { isCloudSyncEnabled, listCloudProgress } from '../services/cloudProgress';
 import { loadHistory, saveHistory } from '../utils/reader';
 
 const history = ref({ books: [], volumes: [] });
-const cloudSyncReady = isCloudSyncEnabled();
+const cloudSyncReady = computed(() => isCloudSyncEnabled() && Boolean(authState.user));
 const cloudLoading = ref(false);
 
 const uniqueVolumeHistory = computed(() => {
@@ -44,7 +45,7 @@ async function refreshHistory() {
   const rawHistory = loadHistory();
   let mergedVolumes = dedupeVolumes(rawHistory.volumes || []);
 
-  if (cloudSyncReady) {
+  if (cloudSyncReady.value) {
     cloudLoading.value = true;
     try {
       const cloudProgress = await listCloudProgress();
@@ -101,7 +102,13 @@ function formatTime(value) {
   });
 }
 
-onMounted(refreshHistory);
+watch(
+  () => [authState.loading, authState.user?.id],
+  ([loading]) => {
+    if (!loading) refreshHistory();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -139,8 +146,11 @@ onMounted(refreshHistory);
     </div>
 
     <Alert v-if="cloudLoading" variant="info">正在同步云端阅读记录…</Alert>
-    <Alert v-else-if="cloudSyncReady" variant="info">继续阅读会优先使用 LeanCloud 中保存的最新进度。</Alert>
-    <Alert v-else variant="info">未配置 LeanCloud 环境变量，当前历史记录仅保存在本地。</Alert>
+    <Alert v-else-if="cloudSyncReady" variant="info">继续阅读会优先使用当前账号保存的最新进度。</Alert>
+    <Alert v-else variant="info">
+      当前历史记录仅保存在本地。
+      <router-link class="ml-1 font-semibold text-primary hover:underline" :to="{ name: 'account' }">登录后开启云端同步</router-link>
+    </Alert>
 
     <template v-if="hasHistory">
       <div class="grid gap-4 xl:grid-cols-2">

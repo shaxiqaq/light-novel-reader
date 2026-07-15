@@ -156,11 +156,7 @@ export async function fetchAllComicChapters(pathWord) {
 export async function fetchComicChapter(pathWord, chapterUuid) {
   const encodedPath = encodeURIComponent(pathWord);
   const encodedChapter = encodeURIComponent(chapterUuid);
-  let response = await fetch(apiUrl(`/comic/${encodedPath}/chapter2/${encodedChapter}`));
-
-  if (response.status === 404) {
-    response = await fetch(apiUrl(`/comic/${encodedPath}/chapter/${encodedChapter}`));
-  }
+  const response = await fetch(apiUrl(`/comic/${encodedPath}/chapter/${encodedChapter}`));
 
   const results = await readJson(response, '加载漫画图片');
   const chapter = results.chapter || results;

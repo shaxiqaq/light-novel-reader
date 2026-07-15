@@ -3,6 +3,7 @@
   "name": "light-novel-reader-progress",
   "main": "src/index.js",
   "compatibility_date": "2025-04-15",
+  "compatibility_flags": ["nodejs_als"],
   "d1_databases": [
     {
       "binding": "DB",
