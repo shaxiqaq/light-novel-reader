@@ -14,6 +14,67 @@ function badRequest(message, status = 400) {
   return json({ ok: false, error: message }, { status });
 }
 
+const COPY_API_BASE = 'https://api.2026copy.com/api/v3';
+const MANGA_ROUTE_PATTERN = /^(?:comics|search\/comic|comic2\/[^/]+|comic\/[^/]+\/(?:group\/default\/chapters|chapter2?\/[^/]+))$/;
+const NOVEL_ROUTE_PATTERN = /^(?:books|search\/books|book\/[^/]+(?:\/volumes|\/volume\/[^/]+)?)$/;
+
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  };
+}
+
+async function fetchCopyApi(apiPath, search) {
+  const target = new URL(`${COPY_API_BASE}/${apiPath}`);
+  target.search = search;
+
+  const upstream = await fetch(target, {
+    headers: {
+      Accept: 'application/json',
+      Origin: 'https://mangacopy.com',
+      Referer: 'https://mangacopy.com/',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/146.0.0.0 Mobile Safari/537.36',
+      platform: '1',
+      region: '1',
+      version: '2026.03.30',
+      webp: '1'
+    }
+  });
+
+  const headers = new Headers(corsHeaders());
+  headers.set('Content-Type', upstream.headers.get('Content-Type') || 'application/json; charset=utf-8');
+  headers.set('Cache-Control', 'public, max-age=60, s-maxage=180');
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers
+  });
+}
+
+async function handleMangaProxy(request) {
+  const url = new URL(request.url);
+  const apiPath = url.pathname.slice('/api/manga/'.length);
+
+  if (!MANGA_ROUTE_PATTERN.test(apiPath)) {
+    return badRequest('Unsupported manga endpoint', 404);
+  }
+
+  return fetchCopyApi(apiPath, url.search);
+}
+
+async function handleNovelProxy(request) {
+  const url = new URL(request.url);
+  const apiPath = url.pathname.slice('/api/novels/'.length);
+
+  if (!NOVEL_ROUTE_PATTERN.test(apiPath)) {
+    return badRequest('Unsupported novel endpoint', 404);
+  }
+
+  return fetchCopyApi(apiPath, url.search);
+}
+
 function normalizeRow(row) {
   if (!row) return null;
 
@@ -130,6 +191,14 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return json({ ok: true });
+    }
+
+    if (request.method === 'GET' && url.pathname.startsWith('/api/manga/')) {
+      return handleMangaProxy(request);
+    }
+
+    if (request.method === 'GET' && url.pathname.startsWith('/api/novels/')) {
+      return handleNovelProxy(request);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/progress') {

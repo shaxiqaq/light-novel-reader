@@ -203,4 +203,102 @@
   .reader-theme-night .border-border\/70 {
     border-color: var(--reader-border) !important;
   }
+
+  .manga-hero {
+    position: relative;
+    background:
+      linear-gradient(90deg, rgba(12, 13, 16, 0.98) 0%, rgba(28, 25, 23, 0.88) 58%, rgba(45, 31, 20, 0.7) 100%),
+      radial-gradient(circle at 82% 30%, rgba(245, 158, 11, 0.55), transparent 24%),
+      repeating-linear-gradient(115deg, transparent 0 18px, rgba(255, 255, 255, 0.05) 18px 20px);
+  }
+
+  .manga-hero::after {
+    content: "漫";
+    position: absolute;
+    right: clamp(1rem, 8vw, 7rem);
+    top: 50%;
+    transform: translateY(-52%) rotate(-8deg);
+    color: rgba(255, 255, 255, 0.08);
+    font-size: clamp(10rem, 25vw, 19rem);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .comic-reader-shell {
+    background:
+      radial-gradient(circle at top, rgba(180, 126, 74, 0.12), transparent 20rem),
+      var(--background);
+    color: var(--foreground);
+  }
+
+  .theme-dark .comic-reader-shell {
+    background: #0d1015;
+  }
+
+  .comic-strip img {
+    min-height: 12rem;
+    background: #111318;
+  }
+
+  .landing-door {
+    min-width: 0;
+    transition:
+      transform 0.28s ease,
+      box-shadow 0.28s ease,
+      border-color 0.28s ease;
+  }
+
+  .landing-door:hover {
+    transform: translateY(-4px);
+  }
+
+  .landing-door-novel {
+    background:
+      radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.9), transparent 22%),
+      repeating-linear-gradient(90deg, rgba(120, 83, 45, 0.035) 0 1px, transparent 1px 24px),
+      linear-gradient(145deg, #f7ead0 0%, #e7cda2 100%);
+    box-shadow: 0 22px 70px rgba(92, 61, 31, 0.16);
+  }
+
+  .landing-door-novel:hover {
+    border-color: rgba(157, 84, 31, 0.5);
+    box-shadow: 0 28px 80px rgba(92, 61, 31, 0.24);
+  }
+
+  .landing-door-manga {
+    background:
+      radial-gradient(circle at 78% 20%, rgba(217, 137, 69, 0.32), transparent 22%),
+      repeating-linear-gradient(125deg, transparent 0 22px, rgba(255, 255, 255, 0.035) 22px 24px),
+      linear-gradient(145deg, #20242b 0%, #0f1217 100%);
+    box-shadow: 0 22px 70px rgba(7, 9, 12, 0.28);
+  }
+
+  .landing-door-manga:hover {
+    border-color: rgba(217, 137, 69, 0.72);
+    box-shadow: 0 28px 80px rgba(7, 9, 12, 0.4);
+  }
+
+  .landing-mark {
+    position: absolute;
+    bottom: -0.16em;
+    right: -0.02em;
+    font-size: clamp(13rem, 34vw, 25rem);
+    font-weight: 900;
+    line-height: 0.78;
+    opacity: 0.075;
+    pointer-events: none;
+    transition: transform 0.35s ease;
+  }
+
+  .landing-door:hover .landing-mark {
+    transform: scale(1.04) rotate(-2deg);
+  }
+
+  .landing-door-novel .landing-mark {
+    color: #6f431f;
+  }
+
+  .landing-door-manga .landing-mark {
+    color: #ffffff;
+  }
 }

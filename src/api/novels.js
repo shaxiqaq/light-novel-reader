@@ -1,4 +1,13 @@
-const API_BASE = 'https://api.2026copy.com/api/v3';
+import { cloudSyncConfig } from '../config/cloudSync';
+
+const DIRECT_API_BASE = 'https://api.2026copy.com/api/v3';
+const PROXY_BASE = (
+  import.meta.env.VITE_NOVEL_API_BASE ||
+  import.meta.env.VITE_CLOUDFLARE_PROGRESS_API ||
+  cloudSyncConfig.apiBase ||
+  ''
+).replace(/\/$/, '');
+const API_BASE = PROXY_BASE ? `${PROXY_BASE}/api/novels` : DIRECT_API_BASE;
 
 function ensureOk(response, action) {
   if (!response.ok) {
@@ -77,9 +86,10 @@ export async function searchBooks({ keyword, offset = 0, limit = 20, qType = '' 
 }
 
 export async function fetchBookBundle(pathWord) {
+  const encodedPath = encodeURIComponent(pathWord);
   const [detailResponse, volumesResponse] = await Promise.all([
-    fetch(`${API_BASE}/book/${pathWord}?_update=true`),
-    fetch(`${API_BASE}/book/${pathWord}/volumes`)
+    fetch(`${API_BASE}/book/${encodedPath}?_update=true`),
+    fetch(`${API_BASE}/book/${encodedPath}/volumes`)
   ]);
 
   const [detailResults, volumeResults] = await Promise.all([
@@ -126,7 +136,9 @@ export async function fetchBookBundle(pathWord) {
 }
 
 export async function fetchVolume(pathWord, volumeId) {
-  const response = await fetch(`${API_BASE}/book/${pathWord}/volume/${volumeId}?_update=true`);
+  const encodedPath = encodeURIComponent(pathWord);
+  const encodedVolume = encodeURIComponent(volumeId);
+  const response = await fetch(`${API_BASE}/book/${encodedPath}/volume/${encodedVolume}?_update=true`);
   const results = await readJson(response, 'Loading volume content');
 
   return {

@@ -3,6 +3,10 @@ import HomeView from '../views/HomeView.vue';
 import BookView from '../views/BookView.vue';
 import ReaderView from '../views/ReaderView.vue';
 import HistoryView from '../views/HistoryView.vue';
+import MangaHomeView from '../views/MangaHomeView.vue';
+import ComicView from '../views/ComicView.vue';
+import ComicReaderView from '../views/ComicReaderView.vue';
+import LandingView from '../views/LandingView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -10,24 +14,54 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView
+      component: LandingView,
+      meta: { section: 'landing' }
+    },
+    {
+      path: '/novels',
+      name: 'novel-home',
+      component: HomeView,
+      meta: { section: 'novel' }
     },
     {
       path: '/history',
       name: 'history',
-      component: HistoryView
+      component: HistoryView,
+      meta: { section: 'novel' }
+    },
+    {
+      path: '/manga',
+      name: 'manga-home',
+      component: MangaHomeView,
+      meta: { section: 'manga' }
+    },
+    {
+      path: '/comic/:pathWord',
+      name: 'comic',
+      component: ComicView,
+      props: true,
+      meta: { section: 'manga' }
+    },
+    {
+      path: '/comic/:pathWord/chapter/:chapterUuid',
+      name: 'comic-reader',
+      component: ComicReaderView,
+      props: true,
+      meta: { section: 'manga' }
     },
     {
       path: '/book/:pathWord',
       name: 'book',
       component: BookView,
-      props: true
+      props: true,
+      meta: { section: 'novel' }
     },
     {
       path: '/book/:pathWord/volume/:volumeId',
       name: 'reader',
       component: ReaderView,
-      props: true
+      props: true,
+      meta: { section: 'novel' }
     }
   ],
   scrollBehavior() {
