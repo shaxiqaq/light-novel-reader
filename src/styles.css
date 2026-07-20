@@ -170,6 +170,45 @@
     max-width: min(100%, 48rem);
   }
 
+  @media (max-width: 640px), (max-device-width: 640px) {
+    html,
+    body,
+    #app,
+    #app > div {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: clip;
+    }
+
+    .reader-main {
+      box-sizing: border-box;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      margin-inline: 0 !important;
+    }
+
+    .reader-shell,
+    .reader-panel,
+    .reader-content,
+    .reader-block {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .reader-block p {
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .reader-settings-dock {
+      right: max(0.75rem, env(safe-area-inset-right));
+      bottom: max(0.75rem, env(safe-area-inset-bottom));
+    }
+  }
+
   .reader-theme-night .text-muted-foreground,
   .reader-theme-night .text-amber-700\/80 {
     color: #c8d0d7 !important;

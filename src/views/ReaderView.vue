@@ -371,7 +371,7 @@ onBeforeUnmount(() => {
 
     <template v-if="book && volume">
       <Card class="reader-panel">
-        <CardContent class="space-y-4 p-6 sm:p-8">
+        <CardContent class="space-y-4 p-4 sm:p-8">
           <div>
             <div class="flex flex-wrap items-center gap-2">
               <p class="text-xs uppercase tracking-[0.32em] text-amber-700/80">Reader</p>
@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
                 云端同步已开启
               </span>
             </div>
-            <h1 class="mt-3 text-3xl font-bold leading-tight sm:text-5xl">{{ book.title }}</h1>
+            <h1 class="mt-3 text-2xl font-bold leading-tight sm:text-5xl">{{ book.title }}</h1>
             <p class="mt-3 text-base text-muted-foreground">{{ volume.title }}</p>
           </div>
 
@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
       </Card>
 
       <Card class="reader-panel">
-        <CardContent class="p-6 sm:p-8">
+        <CardContent class="p-4 sm:p-8">
           <article class="reader-content" :style="readingStyle">
             <section
               v-for="item in items"
@@ -471,7 +471,7 @@ onBeforeUnmount(() => {
 
     <div v-if="settingsOpen" class="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" @click="closeSettings" />
 
-    <div class="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div class="reader-settings-dock fixed bottom-6 right-6 z-50 flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-3">
       <transition
         enter-active-class="transition duration-200 ease-out"
         enter-from-class="translate-y-3 opacity-0"

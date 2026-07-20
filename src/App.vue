@@ -101,7 +101,7 @@ watch(
         isComicReaderRoute
           ? 'max-w-none px-0 pb-0 pt-0'
           : isNovelReaderRoute
-            ? 'max-w-5xl px-4 pb-10 pt-3 sm:px-6 sm:pt-5'
+            ? 'reader-main max-w-5xl px-3 pb-10 pt-3 sm:px-6 sm:pt-5'
             : 'max-w-6xl px-4 pb-10 pt-6 sm:px-6'
       "
     >
