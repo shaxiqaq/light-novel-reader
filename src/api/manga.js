@@ -1,6 +1,7 @@
 import { cloudSyncConfig } from '../config/cloudSync';
 
 const DIRECT_API_BASE = 'https://api.2026copy.com/api/v3';
+const DIRECT_MANGA_FALLBACK_BASE = 'https://api.2024manga.com/api/v3';
 const PROXY_BASE = (
   import.meta.env.VITE_MANGA_API_BASE ||
   import.meta.env.VITE_CLOUDFLARE_PROGRESS_API ||
@@ -26,14 +27,22 @@ async function readJson(response, action) {
   return data.results;
 }
 
-function apiUrl(path, params = {}) {
+function buildApiUrl(base, path, params = {}) {
   const query = new URLSearchParams({
     ...params,
     platform: PLATFORM,
     _update: 'true'
   });
-  const base = PROXY_BASE ? `${PROXY_BASE}/api/manga` : DIRECT_API_BASE;
   return `${base}${path}?${query.toString()}`;
+}
+
+function apiUrl(path, params = {}) {
+  const base = PROXY_BASE ? `${PROXY_BASE}/api/manga` : DIRECT_API_BASE;
+  return buildApiUrl(base, path, params);
+}
+
+function directApiUrl(path, params = {}) {
+  return buildApiUrl(DIRECT_MANGA_FALLBACK_BASE, path, params);
 }
 
 function namesFrom(items) {
@@ -121,15 +130,24 @@ export async function fetchComic(pathWord) {
 }
 
 async function fetchChapterPage(pathWord, offset, limit) {
-  const response = await fetch(
-    apiUrl(`/comic/${encodeURIComponent(pathWord)}/group/default/chapters`, {
-      limit: String(limit),
-      offset: String(offset)
-    })
-  );
-  const results = await readJson(response, '加载漫画目录');
-  const list = (results.list || []).map((item, index) => normalizeChapter(item, offset + index));
+  const path = `/comic/${encodeURIComponent(pathWord)}/group/default/chapters`;
+  const params = {
+    limit: String(limit),
+    offset: String(offset)
+  };
 
+  let results;
+  try {
+    results = await readJson(await fetch(apiUrl(path, params)), '\u52a0\u8f7d\u6f2b\u753b\u76ee\u5f55');
+  } catch (proxyError) {
+    if (!PROXY_BASE) throw proxyError;
+    results = await readJson(
+      await fetch(directApiUrl(path, params), { headers: { Accept: 'application/json' } }),
+      '\u76f4\u63a5\u52a0\u8f7d\u6f2b\u753b\u76ee\u5f55'
+    );
+  }
+
+  const list = (results.list || []).map((item, index) => normalizeChapter(item, offset + index));
   return {
     total: Number(results.total ?? list.length),
     list

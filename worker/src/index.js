@@ -48,9 +48,10 @@ function badRequest(message, status = 400) {
 
 const COPY_API_BASE = 'https://api.2026copy.com/api/v3';
 const COPY_WEB_BASE = 'https://www.mangacopy.com';
+const MANGA_API_FALLBACK_BASE = 'https://api.2024manga.com/api/v3';
 const MANGA_ROUTE_PATTERN = /^(?:comics|search\/comic|comic2\/[^/]+|comic\/[^/]+\/(?:group\/default\/chapters|chapter\/[^/]+))$/;
 const NOVEL_ROUTE_PATTERN = /^(?:books|search\/books|book\/[^/]+(?:\/volumes|\/volume\/[^/]+)?)$/;
-const MANGA_CACHE_VERSION = 'desktop-v5';
+const MANGA_CACHE_VERSION = 'desktop-hybrid-v2';
 const MANGA_STALE_SECONDS = 7 * 24 * 60 * 60;
 const MANGA_CIRCUIT_SECONDS = 60 * 60;
 const UPSTREAM_RESTRICTION_PATTERN = /(?:copy3000|\u7834\u89e3\u7248|\u7834\u89e3\u7248\u672c|\u7b49\u5f85\s*1\s*\u5c0f\u65f6|\u66f4\u65b0\u6700\u65b0\s*APP|cf-chl|challenge-platform)/i;
@@ -273,6 +274,69 @@ async function decryptDesktopChapter(contentKey, decryptKey) {
   return contents;
 }
 
+function normalizeDesktopChapters(payload) {
+  const chapters = [];
+  const seen = new Set();
+
+  const visit = (value, key = '', depth = 0) => {
+    if (!value || depth > 8 || key === 'last_chapter' || key === 'build') return;
+    if (typeof value === 'string' && /^[\s]*[\[{]/.test(value)) {
+      try { visit(JSON.parse(value), key, depth + 1); } catch { /* Ignore non-JSON text fields. */ }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, key, depth + 1));
+      return;
+    }
+    if (typeof value !== 'object') return;
+
+    const id = value.id ?? value.uuid;
+    const name = value.name ?? value.title;
+    if ((typeof id === 'string' || typeof id === 'number') && String(id) && typeof name === 'string' && name.trim()) {
+      const uuid = String(id);
+      if (!seen.has(uuid)) {
+        seen.add(uuid);
+        chapters.push({ uuid, name: name.trim(), index: chapters.length });
+      }
+      return;
+    }
+
+    Object.entries(value).forEach(([childKey, child]) => visit(child, childKey, depth + 1));
+  };
+
+  visit(payload, 'payload');
+  return chapters;
+}
+
+async function fetchApiComicChapters(pathWord) {
+  const target = new URL(`${MANGA_API_FALLBACK_BASE}/comic/${encodeURIComponent(pathWord)}/group/default/chapters`);
+  target.search = new URLSearchParams({ limit: '500', offset: '0', _update: 'true' }).toString();
+  const response = await fetch(target, {
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      Accept: 'application/json',
+      Origin: COPY_WEB_BASE,
+      Referer: `${COPY_WEB_BASE}/comic/${encodeURIComponent(pathWord)}`,
+      'User-Agent': DESKTOP_USER_AGENT,
+      platform: '1',
+      region: '1',
+      version: '2026.03.30',
+      webp: '1'
+    }
+  });
+  const body = await response.text();
+  assertUpstreamContent(body, response.status);
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error('Comic catalog fallback returned invalid data'); }
+  const list = data?.code === 200 && Array.isArray(data?.results?.list) ? data.results.list : [];
+  if (!list.length) throw new Error(data?.message || '\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u4e3a\u7a7a');
+  return list.map((chapter, index) => ({
+    uuid: String(chapter.uuid || chapter.id || ''),
+    name: chapter.name || `\u7b2c ${index + 1} \u8bdd`,
+    index: Number.isFinite(Number(chapter.index)) ? Number(chapter.index) : index
+  })).filter((chapter) => chapter.uuid);
+}
+
 async function fetchDesktopComicChapters(pathWord) {
   const detailPath = `/comic/${encodeURIComponent(pathWord)}`;
   const html = await fetchDesktopHtml(detailPath);
@@ -287,10 +351,12 @@ async function fetchDesktopComicChapters(pathWord) {
   try { data = JSON.parse(body); } catch { throw new Error('\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u8fd4\u56de\u5f02\u5e38'); }
   if (data?.code !== 200 || typeof data?.results !== 'string') throw new Error(data?.message || '\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u52a0\u8f7d\u5931\u8d25');
   const payload = await decryptDesktopPayload(data.results, decryptKey);
-  const group = payload?.groups?.default || Object.values(payload?.groups || {})[0];
-  const chapters = Array.isArray(group?.chapters) ? group.chapters : [];
-  if (!chapters.length) throw new Error('\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u4e3a\u7a7a');
-  return chapters.map((chapter, index) => ({ uuid: String(chapter.id || ''), name: chapter.name || `\u7b2c ${index + 1} \u8bdd`, index })).filter((chapter) => chapter.uuid);
+  const chapters = normalizeDesktopChapters(payload);
+  if (!chapters.length) {
+    console.warn('Desktop comic catalog is empty; using API fallback', { pathWord });
+    return fetchApiComicChapters(pathWord);
+  }
+  return chapters;
 }
 
 async function fetchDesktopComicChapter(pathWord, chapterUuid) {
