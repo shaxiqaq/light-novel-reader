@@ -51,11 +51,13 @@ const COPY_WEB_BASE = 'https://www.mangacopy.com';
 const MANGA_API_FALLBACK_BASE = 'https://api.2024manga.com/api/v3';
 const MANGA_ROUTE_PATTERN = /^(?:comics|search\/comic|comic2\/[^/]+|comic\/[^/]+\/(?:group\/default\/chapters|chapter\/[^/]+))$/;
 const NOVEL_ROUTE_PATTERN = /^(?:books|search\/books|book\/[^/]+(?:\/volumes|\/volume\/[^/]+)?)$/;
-const MANGA_CACHE_VERSION = 'desktop-hybrid-v2';
+const MANGA_CACHE_VERSION = 'desktop-hybrid-v6';
 const MANGA_STALE_SECONDS = 7 * 24 * 60 * 60;
 const MANGA_CIRCUIT_SECONDS = 60 * 60;
 const UPSTREAM_RESTRICTION_PATTERN = /(?:copy3000|\u7834\u89e3\u7248|\u7834\u89e3\u7248\u672c|\u7b49\u5f85\s*1\s*\u5c0f\u65f6|\u66f4\u65b0\u6700\u65b0\s*APP|cf-chl|challenge-platform)/i;
 const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
+const MERGED_COMIC_PATHS = Object.freeze({ liadierdeadishang: 'liadierdedadishang' });
+const resolveComicPath = (pathWord) => MERGED_COMIC_PATHS[pathWord] || pathWord;
 
 function corsHeaders() {
   return {
@@ -308,8 +310,35 @@ function normalizeDesktopChapters(payload) {
   return chapters;
 }
 
+async function fetchApiComicDetail(pathWord) {
+  const resolvedPathWord = resolveComicPath(pathWord);
+  const target = new URL(`${MANGA_API_FALLBACK_BASE}/comic2/${encodeURIComponent(resolvedPathWord)}`);
+  target.search = new URLSearchParams({ _update: 'true', platform: '1' }).toString();
+  const response = await fetch(target, {
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      Accept: 'application/json',
+      Origin: COPY_WEB_BASE,
+      Referer: `${COPY_WEB_BASE}/comic/${encodeURIComponent(resolvedPathWord)}`,
+      'User-Agent': DESKTOP_USER_AGENT,
+      platform: '1',
+      region: '1',
+      version: '2026.03.30',
+      webp: '1'
+    }
+  });
+  const body = await response.text();
+  assertUpstreamContent(body, response.status);
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error('Comic detail fallback returned invalid data'); }
+  const comic = data?.code === 200 ? (data?.results?.comic || data?.results) : null;
+  if (!comic?.name) throw new Error(data?.message || 'Comic detail fallback returned no content');
+  return comic;
+}
+
 async function fetchApiComicChapters(pathWord) {
-  const target = new URL(`${MANGA_API_FALLBACK_BASE}/comic/${encodeURIComponent(pathWord)}/group/default/chapters`);
+  const resolvedPathWord = resolveComicPath(pathWord);
+  const target = new URL(`${MANGA_API_FALLBACK_BASE}/comic/${encodeURIComponent(resolvedPathWord)}/group/default/chapters`);
   target.search = new URLSearchParams({ limit: '500', offset: '0', _update: 'true' }).toString();
   const response = await fetch(target, {
     signal: AbortSignal.timeout(15000),
@@ -338,12 +367,14 @@ async function fetchApiComicChapters(pathWord) {
 }
 
 async function fetchDesktopComicChapters(pathWord) {
-  const detailPath = `/comic/${encodeURIComponent(pathWord)}`;
+  if (resolveComicPath(pathWord) !== pathWord) return fetchApiComicChapters(pathWord);
+  const resolvedPathWord = resolveComicPath(pathWord);
+  const detailPath = `/comic/${encodeURIComponent(resolvedPathWord)}`;
   const html = await fetchDesktopHtml(detailPath);
   const decryptKey = html.match(/\bvar\s+ccz\s*=\s*'([^']+)'/i)?.[1];
   const dnts = html.match(/id="dnt"[^>]*\bvalue="([^"]+)"/i)?.[1];
   if (!decryptKey || !dnts) throw new Error('\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u5bc6\u94a5\u89e3\u6790\u5931\u8d25');
-  const target = new URL(`/comicdetail/${encodeURIComponent(pathWord)}/chapters`, COPY_WEB_BASE);
+  const target = new URL(`/comicdetail/${encodeURIComponent(resolvedPathWord)}/chapters`, COPY_WEB_BASE);
   const response = await fetch(target, { signal: AbortSignal.timeout(15000), headers: { ...desktopHeaders('application/json'), dnts, Referer: new URL(detailPath, COPY_WEB_BASE).toString() } });
   const body = await response.text();
   assertUpstreamContent(body, response.status);
@@ -359,8 +390,44 @@ async function fetchDesktopComicChapters(pathWord) {
   return chapters;
 }
 
+async function fetchApiComicChapter(pathWord, chapterUuid) {
+  const resolvedPathWord = resolveComicPath(pathWord);
+  const target = new URL(`${MANGA_API_FALLBACK_BASE}/comic/${encodeURIComponent(resolvedPathWord)}/chapter/${encodeURIComponent(chapterUuid)}`);
+  target.search = new URLSearchParams({ _update: 'true', platform: '1' }).toString();
+  const response = await fetch(target, {
+    signal: AbortSignal.timeout(15000),
+    headers: {
+      Accept: 'application/json',
+      Origin: COPY_WEB_BASE,
+      Referer: `${COPY_WEB_BASE}/comic/${encodeURIComponent(resolvedPathWord)}/chapter/${encodeURIComponent(chapterUuid)}`,
+      'User-Agent': DESKTOP_USER_AGENT,
+      platform: '1',
+      region: '1',
+      version: '2026.03.30',
+      webp: '1'
+    }
+  });
+  const body = await response.text();
+  assertUpstreamContent(body, response.status);
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error('Comic chapter fallback returned invalid data'); }
+  const chapter = data?.code === 200 ? (data?.results?.chapter || data?.results) : null;
+  const contents = Array.isArray(chapter?.contents) ? chapter.contents.filter((item) => typeof item?.url === 'string' && item.url) : [];
+  if (!contents.length) throw new Error(data?.message || 'Comic chapter fallback returned no images');
+  return {
+    chapter: {
+      ...chapter,
+      uuid: String(chapter.uuid || chapterUuid),
+      contents,
+      words: Array.isArray(chapter.words) ? chapter.words : contents.map((_, index) => index),
+      resolved_path_word: resolvedPathWord
+    }
+  };
+}
+
 async function fetchDesktopComicChapter(pathWord, chapterUuid) {
-  const chapterUrl = `${COPY_WEB_BASE}/comic/${encodeURIComponent(pathWord)}/chapter/${encodeURIComponent(chapterUuid)}`;
+  const resolvedPathWord = resolveComicPath(pathWord);
+  const chapterUrl = `${COPY_WEB_BASE}/comic/${encodeURIComponent(resolvedPathWord)}/chapter/${encodeURIComponent(chapterUuid)}`;
   const upstream = await fetch(chapterUrl, {
     signal: AbortSignal.timeout(15000),
     headers: {
@@ -390,8 +457,19 @@ async function fetchDesktopComicChapter(pathWord, chapterUuid) {
     });
     response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=3600');
     return response;
-  } catch (error) {
-    return json({ code: 502, message: error instanceof Error ? error.message : 'Desktop chapter decoding failed' }, { status: 502 });
+  } catch (desktopError) {
+    try {
+      const results = await fetchApiComicChapter(pathWord, chapterUuid);
+      const response = json({ code: 200, results });
+      response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=3600');
+      response.headers.set('X-Manga-Source', 'api-fallback');
+      return response;
+    } catch (fallbackError) {
+      const message = fallbackError instanceof Error
+        ? fallbackError.message
+        : (desktopError instanceof Error ? desktopError.message : 'Comic chapter loading failed');
+      return json({ code: 502, message }, { status: 502 });
+    }
   }
 }
 
@@ -432,7 +510,14 @@ async function handleMangaProxy(request, ctx) {
   const detailMatch = apiPath.match(/^comic2\/([^/]+)$/);
   if (detailMatch) {
     const pathWord = decodeURIComponent(detailMatch[1]);
-    return loadCachedManga(request, ctx, 6 * 60 * 60, async () => ({ comic: parseComicDetail(await fetchDesktopHtml(`/comic/${encodeURIComponent(pathWord)}`), pathWord) }));
+    return loadCachedManga(request, ctx, 6 * 60 * 60, async () => {
+      if (resolveComicPath(pathWord) !== pathWord) return { comic: await fetchApiComicDetail(pathWord) };
+      try {
+        return { comic: parseComicDetail(await fetchDesktopHtml(`/comic/${encodeURIComponent(pathWord)}`), pathWord) };
+      } catch {
+        return { comic: await fetchApiComicDetail(pathWord) };
+      }
+    });
   }
 
   const chaptersMatch = apiPath.match(/^comic\/([^/]+)\/group\/default\/chapters$/);
