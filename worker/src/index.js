@@ -50,6 +50,10 @@ const COPY_API_BASE = 'https://api.2026copy.com/api/v3';
 const COPY_WEB_BASE = 'https://www.mangacopy.com';
 const MANGA_ROUTE_PATTERN = /^(?:comics|search\/comic|comic2\/[^/]+|comic\/[^/]+\/(?:group\/default\/chapters|chapter\/[^/]+))$/;
 const NOVEL_ROUTE_PATTERN = /^(?:books|search\/books|book\/[^/]+(?:\/volumes|\/volume\/[^/]+)?)$/;
+const MANGA_CACHE_VERSION = 'desktop-v5';
+const MANGA_STALE_SECONDS = 7 * 24 * 60 * 60;
+const MANGA_CIRCUIT_SECONDS = 60 * 60;
+const UPSTREAM_RESTRICTION_PATTERN = /(?:copy3000|\u7834\u89e3\u7248|\u7834\u89e3\u7248\u672c|\u7b49\u5f85\s*1\s*\u5c0f\u65f6|\u66f4\u65b0\u6700\u65b0\s*APP|cf-chl|challenge-platform)/i;
 const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 
 function corsHeaders() {
@@ -65,6 +69,7 @@ async function fetchCopyApi(apiPath, search) {
   target.search = search;
 
   const upstream = await fetch(target, {
+    signal: AbortSignal.timeout(15000),
     headers: {
       Accept: 'application/json',
       Origin: 'https://mangacopy.com',
@@ -85,6 +90,147 @@ async function fetchCopyApi(apiPath, search) {
     status: upstream.status,
     headers
   });
+}
+
+function decodeHtml(value = '') {
+  return value.replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ');
+}
+
+function cleanHtmlText(value = '') {
+  return decodeHtml(value.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+function desktopHeaders(accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8') {
+  return { Accept: accept, 'Accept-Language': 'zh-CN,zh;q=0.9', Referer: `${COPY_WEB_BASE}/`, 'User-Agent': DESKTOP_USER_AGENT };
+}
+
+function assertUpstreamContent(body, status) {
+  if (UPSTREAM_RESTRICTION_PATTERN.test(body)) {
+    const error = new Error('\u6f2b\u753b\u6570\u636e\u6e90\u6682\u65f6\u89e6\u53d1\u8bbf\u95ee\u9650\u5236\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002\u5df2\u6709\u7f13\u5b58\u7684\u5185\u5bb9\u4ecd\u53ef\u7ee7\u7eed\u9605\u8bfb\u3002');
+    error.upstreamRestricted = true;
+    throw error;
+  }
+  if (status < 200 || status >= 300) throw new Error(`\u6f2b\u753b\u6570\u636e\u6e90\u8bf7\u6c42\u5931\u8d25\uff08HTTP ${status}\uff09`);
+}
+
+async function fetchDesktopHtml(pathname, search = '') {
+  const target = new URL(pathname, COPY_WEB_BASE);
+  target.search = search;
+  const response = await fetch(target, { headers: desktopHeaders(), signal: AbortSignal.timeout(15000) });
+  const body = await response.text();
+  assertUpstreamContent(body, response.status);
+  return body;
+}
+
+async function fetchDesktopJson(pathname, search = '') {
+  const target = new URL(pathname, COPY_WEB_BASE);
+  target.search = search;
+  const response = await fetch(target, { headers: desktopHeaders('application/json'), signal: AbortSignal.timeout(15000) });
+  const body = await response.text();
+  assertUpstreamContent(body, response.status);
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error('\u6f2b\u753b\u6570\u636e\u6e90\u8fd4\u56de\u4e86\u65e0\u6cd5\u8bc6\u522b\u7684\u6570\u636e'); }
+  if (data?.code !== 200 || !data?.results) throw new Error(data?.message || '\u6f2b\u753b\u6570\u636e\u6e90\u8fd4\u56de\u5f02\u5e38');
+  return data.results;
+}
+
+
+function decodePythonString(value = '') {
+  return value.replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+}
+
+function parseComicListAttribute(html) {
+  const encoded = html.match(/class="[^"]*\bexemptComic-box\b[^"]*"[^>]*\blist="([^"]*)"/i)?.[1] || '';
+  const source = decodeHtml(encoded);
+  const list = [];
+  const itemPattern = /'path_word':\s*'((?:\\.|[^'])*)',\s*'name':\s*'((?:\\.|[^'])*)',\s*'cover':\s*'((?:\\.|[^'])*)',\s*'status':\s*(\d+),\s*'author':\s*\[([\s\S]*?)\](?=\s*})/g;
+  for (const match of source.matchAll(itemPattern)) {
+    const authors = Array.from(match[5].matchAll(/'name':\s*'((?:\\.|[^'])*)'/g), (author) => ({ name: decodePythonString(author[1]) }));
+    list.push({ path_word: decodePythonString(match[1]), name: decodePythonString(match[2]), cover: decodePythonString(match[3]), status: Number(match[4]), author: authors, theme: [], region: '' });
+  }
+  return list;
+}
+function parseComicList(html, offset, limit) {
+  const total = Number(html.match(/class="[^"]*\bexemptComic-box\b[^"]*"[^>]*\btotal="(\d+)"/i)?.[1] || 0);
+  const list = parseComicListAttribute(html).slice(0, limit);
+  if (!list.length) throw new Error('\u684c\u9762\u6f2b\u753b\u5217\u8868\u89e3\u6790\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5');
+  return { total, offset, limit, list };
+}
+
+function extractListSection(html, labels) {
+  return new RegExp(`<li>\\s*<span[^>]*>(?:${labels})[\uff1a:]<\\/span>([\\s\\S]*?)<\\/li>`, 'i').exec(html)?.[1] || '';
+}
+
+function parseComicDetail(html, pathWord) {
+  const title = decodeHtml(html.match(/<h6\b[^>]*title="([^"]+)"/i)?.[1] || '').trim();
+  const coverBlock = html.match(/<div\b[^>]*class="[^"]*\bcomicParticulars-left-img\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i)?.[1] || '';
+  const cover = decodeHtml(coverBlock.match(/(?:data-src|src)="([^"]+)"/i)?.[1] || '');
+  const authorBlock = extractListSection(html, '\u4f5c\u8005');
+  const themeBlock = extractListSection(html, '\u984c\u6750|\u9898\u6750');
+  const links = (block) => Array.from(block.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi), (match) => ({ name: cleanHtmlText(match[1]).replace(/^#/, '') })).filter((item) => item.name);
+  if (!title || !cover) throw new Error('\u684c\u9762\u6f2b\u753b\u8be6\u60c5\u89e3\u6790\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5');
+  return { path_word: pathWord, name: title, alias: cleanHtmlText(extractListSection(html, '\u5225\u540d|\u522b\u540d')), cover, brief: cleanHtmlText(html.match(/<p\b[^>]*class="[^"]*\bintro\b[^"]*"[^>]*>([\s\S]*?)<\/p>/i)?.[1] || ''), author: links(authorBlock), theme: links(themeBlock), status: cleanHtmlText(extractListSection(html, '\u72c0\u614b|\u72b6\u6001')), region: '', popular: cleanHtmlText(extractListSection(html, '\u71b1\u5ea6|\u70ed\u5ea6')), datetime_updated: cleanHtmlText(extractListSection(html, '\u6700\u5f8c\u66f4\u65b0|\u6700\u540e\u66f4\u65b0')) };
+}
+
+function mangaCacheKey(request) {
+  const url = new URL(request.url);
+  url.protocol = 'https:';
+  url.hostname = 'manga-cache.internal';
+  url.port = '';
+  url.searchParams.delete('_update');
+  url.searchParams.delete('platform');
+  url.searchParams.sort();
+  url.searchParams.set('_source', MANGA_CACHE_VERSION);
+  return new Request(url.toString());
+}
+
+const circuitCacheKey = () => new Request(`https://manga-cache.internal/${MANGA_CACHE_VERSION}/circuit`);
+
+async function getCachePayload(key) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return null;
+  const response = await cache.match(key);
+  return response?.json().catch(() => null) || null;
+}
+
+function storeCachePayload(key, payload, maxAge, ctx) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return;
+  const response = new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${maxAge}` } });
+  const task = cache.put(key, response);
+  if (ctx?.waitUntil) ctx.waitUntil(task);
+}
+
+async function isMangaCircuitOpen() {
+  const payload = await getCachePayload(circuitCacheKey());
+  return Number(payload?.blockedUntil || 0) > Date.now();
+}
+
+function mangaResponse(payload, cacheState = 'MISS') {
+  const response = json(payload);
+  response.headers.set('Cache-Control', 'private, max-age=30');
+  response.headers.set('X-Manga-Cache', cacheState);
+  return response;
+}
+
+async function loadCachedManga(request, ctx, freshSeconds, loader) {
+  const key = mangaCacheKey(request);
+  const cached = await getCachePayload(key);
+  const age = cached?._proxy?.cachedAt ? Date.now() - cached._proxy.cachedAt : Number.POSITIVE_INFINITY;
+  if (cached && age <= freshSeconds * 1000) return mangaResponse(cached, 'HIT');
+  if (await isMangaCircuitOpen()) return cached ? mangaResponse(cached, 'STALE') : mangaResponse({ code: 503, message: '\u6f2b\u753b\u6570\u636e\u6e90\u6b63\u5728\u9650\u5236\u8bbf\u95ee\uff0c\u8bf7\u7ea6\u4e00\u5c0f\u65f6\u540e\u518d\u8bd5\u3002' }, 'BLOCKED');
+  try {
+    const payload = { code: 200, results: await loader(), _proxy: { source: 'mangacopy-desktop', cachedAt: Date.now() } };
+    storeCachePayload(key, payload, MANGA_STALE_SECONDS, ctx);
+    return mangaResponse(payload);
+  } catch (error) {
+    if (error?.upstreamRestricted || UPSTREAM_RESTRICTION_PATTERN.test(error?.message || '')) storeCachePayload(circuitCacheKey(), { blockedUntil: Date.now() + MANGA_CIRCUIT_SECONDS * 1000 }, MANGA_CIRCUIT_SECONDS, ctx);
+    if (cached) return mangaResponse(cached, 'STALE');
+    return mangaResponse({ code: 503, message: error instanceof Error ? error.message : '\u6f2b\u753b\u6570\u636e\u6e90\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5' }, 'ERROR');
+  }
 }
 
 function extractDesktopChapterKeys(html) {
@@ -110,39 +256,47 @@ function extractDesktopChapterKeys(html) {
   return { contentKey, decryptKey };
 }
 
-async function decryptDesktopChapter(contentKey, decryptKey) {
+async function decryptDesktopPayload(contentKey, decryptKey) {
   const iv = new TextEncoder().encode(contentKey.slice(0, 16));
   const encryptedHex = contentKey.slice(16);
-
-  if (iv.length !== 16 || encryptedHex.length % 2 !== 0 || !/^[\da-f]+$/i.test(encryptedHex)) {
-    throw new Error('Desktop chapter payload is invalid');
-  }
-
+  if (iv.length !== 16 || encryptedHex.length % 2 !== 0 || !/^[\da-f]+$/i.test(encryptedHex)) throw new Error('Desktop encrypted payload is invalid');
   const encrypted = new Uint8Array(encryptedHex.length / 2);
-  for (let index = 0; index < encrypted.length; index += 1) {
-    encrypted[index] = Number.parseInt(encryptedHex.slice(index * 2, index * 2 + 2), 16);
-  }
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(decryptKey),
-    { name: 'AES-CBC' },
-    false,
-    ['decrypt']
-  );
+  for (let index = 0; index < encrypted.length; index += 1) encrypted[index] = Number.parseInt(encryptedHex.slice(index * 2, index * 2 + 2), 16);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(decryptKey), { name: 'AES-CBC' }, false, ['decrypt']);
   const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, encrypted);
-  const contents = JSON.parse(new TextDecoder().decode(decrypted));
+  return JSON.parse(new TextDecoder().decode(decrypted));
+}
 
-  if (!Array.isArray(contents) || contents.some((item) => typeof item?.url !== 'string')) {
-    throw new Error('Desktop chapter image list is invalid');
-  }
-
+async function decryptDesktopChapter(contentKey, decryptKey) {
+  const contents = await decryptDesktopPayload(contentKey, decryptKey);
+  if (!Array.isArray(contents) || contents.some((item) => typeof item?.url !== 'string')) throw new Error('Desktop chapter image list is invalid');
   return contents;
+}
+
+async function fetchDesktopComicChapters(pathWord) {
+  const detailPath = `/comic/${encodeURIComponent(pathWord)}`;
+  const html = await fetchDesktopHtml(detailPath);
+  const decryptKey = html.match(/\bvar\s+ccz\s*=\s*'([^']+)'/i)?.[1];
+  const dnts = html.match(/id="dnt"[^>]*\bvalue="([^"]+)"/i)?.[1];
+  if (!decryptKey || !dnts) throw new Error('\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u5bc6\u94a5\u89e3\u6790\u5931\u8d25');
+  const target = new URL(`/comicdetail/${encodeURIComponent(pathWord)}/chapters`, COPY_WEB_BASE);
+  const response = await fetch(target, { signal: AbortSignal.timeout(15000), headers: { ...desktopHeaders('application/json'), dnts, Referer: new URL(detailPath, COPY_WEB_BASE).toString() } });
+  const body = await response.text();
+  assertUpstreamContent(body, response.status);
+  let data;
+  try { data = JSON.parse(body); } catch { throw new Error('\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u8fd4\u56de\u5f02\u5e38'); }
+  if (data?.code !== 200 || typeof data?.results !== 'string') throw new Error(data?.message || '\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u52a0\u8f7d\u5931\u8d25');
+  const payload = await decryptDesktopPayload(data.results, decryptKey);
+  const group = payload?.groups?.default || Object.values(payload?.groups || {})[0];
+  const chapters = Array.isArray(group?.chapters) ? group.chapters : [];
+  if (!chapters.length) throw new Error('\u684c\u9762\u6f2b\u753b\u76ee\u5f55\u4e3a\u7a7a');
+  return chapters.map((chapter, index) => ({ uuid: String(chapter.id || ''), name: chapter.name || `\u7b2c ${index + 1} \u8bdd`, index })).filter((chapter) => chapter.uuid);
 }
 
 async function fetchDesktopComicChapter(pathWord, chapterUuid) {
   const chapterUrl = `${COPY_WEB_BASE}/comic/${encodeURIComponent(pathWord)}/chapter/${encodeURIComponent(chapterUuid)}`;
   const upstream = await fetch(chapterUrl, {
+    signal: AbortSignal.timeout(15000),
     headers: {
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'zh-CN,zh;q=0.9',
@@ -175,23 +329,58 @@ async function fetchDesktopComicChapter(pathWord, chapterUuid) {
   }
 }
 
-async function handleMangaProxy(request) {
+async function handleMangaProxy(request, ctx) {
   const url = new URL(request.url);
   const apiPath = url.pathname.slice('/api/manga/'.length);
+  if (!MANGA_ROUTE_PATTERN.test(apiPath)) return badRequest('Unsupported manga endpoint', 404);
 
-  if (!MANGA_ROUTE_PATTERN.test(apiPath)) {
-    return badRequest('Unsupported manga endpoint', 404);
+  const chapterMatch = apiPath.match(/^comic\/([^/]+)\/chapter\/([^/]+)$/);
+  if (chapterMatch) {
+    const pathWord = decodeURIComponent(chapterMatch[1]);
+    const chapterUuid = decodeURIComponent(chapterMatch[2]);
+    return loadCachedManga(request, ctx, 24 * 60 * 60, async () => {
+      const response = await fetchDesktopComicChapter(pathWord, chapterUuid);
+      const data = await response.json();
+      if (data?.code !== 200 || !data?.results) throw new Error(data?.message || 'Desktop chapter loading failed');
+      return data.results;
+    });
   }
 
-  const desktopChapter = apiPath.match(/^comic\/([^/]+)\/chapter\/([^/]+)$/);
-  if (desktopChapter) {
-    return fetchDesktopComicChapter(
-      decodeURIComponent(desktopChapter[1]),
-      decodeURIComponent(desktopChapter[2])
-    );
+  if (apiPath === 'comics') {
+    const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 20), 1), 50);
+    const search = new URLSearchParams({ ordering: url.searchParams.get('ordering') || '-datetime_updated', offset: String(offset), limit: String(limit) });
+    return loadCachedManga(request, ctx, 10 * 60, async () => parseComicList(await fetchDesktopHtml('/comics', search.toString()), offset, limit));
   }
 
-  return fetchCopyApi(apiPath, url.search);
+  if (apiPath === 'search/comic') {
+    const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 20), 1), 50);
+    const search = new URLSearchParams({ offset: String(offset), platform: '2', limit: String(limit), q: url.searchParams.get('q') || '', q_type: url.searchParams.get('q_type') || '' });
+    return loadCachedManga(request, ctx, 10 * 60, async () => {
+      const results = await fetchDesktopJson('/api/kb/web/searchci/comics', search.toString());
+      return { total: Number(results.total || 0), offset, limit, list: Array.isArray(results.list) ? results.list : [] };
+    });
+  }
+
+  const detailMatch = apiPath.match(/^comic2\/([^/]+)$/);
+  if (detailMatch) {
+    const pathWord = decodeURIComponent(detailMatch[1]);
+    return loadCachedManga(request, ctx, 6 * 60 * 60, async () => ({ comic: parseComicDetail(await fetchDesktopHtml(`/comic/${encodeURIComponent(pathWord)}`), pathWord) }));
+  }
+
+  const chaptersMatch = apiPath.match(/^comic\/([^/]+)\/group\/default\/chapters$/);
+  if (chaptersMatch) {
+    const pathWord = decodeURIComponent(chaptersMatch[1]);
+    const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 100), 1), 500);
+    return loadCachedManga(request, ctx, 6 * 60 * 60, async () => {
+      const chapters = await fetchDesktopComicChapters(pathWord);
+      return { total: chapters.length, offset, limit, list: chapters.slice(offset, offset + limit) };
+    });
+  }
+
+  return badRequest('Unsupported manga endpoint', 404);
 }
 
 async function handleNovelProxy(request) {
@@ -458,9 +647,9 @@ async function handleDeleteFavorite(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
-      return await handleRequest(request, env);
+      return await handleRequest(request, env, ctx);
     } catch (error) {
       console.error('Unhandled worker request error', error);
       const url = new URL(request.url);
@@ -478,7 +667,7 @@ export default {
   }
 };
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
     const url = new URL(request.url);
 
     const credentialRoute =
@@ -502,7 +691,7 @@ async function handleRequest(request, env) {
     }
 
     if (request.method === 'GET' && url.pathname.startsWith('/api/manga/')) {
-      return handleMangaProxy(request);
+      return handleMangaProxy(request, ctx);
     }
 
     if (request.method === 'GET' && url.pathname.startsWith('/api/novels/')) {
