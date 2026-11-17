@@ -186,7 +186,11 @@ function mangaCacheKey(request) {
   url.searchParams.delete('_update');
   url.searchParams.delete('platform');
   url.searchParams.sort();
-  url.searchParams.set('_source', MANGA_CACHE_VERSION);
+  // Invalidate empty search results cached from the retired searchci endpoint.
+  const version = url.pathname === '/api/manga/search/comic'
+    ? `${MANGA_CACHE_VERSION}-searchcl-v1`
+    : MANGA_CACHE_VERSION;
+  url.searchParams.set('_source', version);
   return new Request(url.toString());
 }
 
@@ -502,7 +506,7 @@ async function handleMangaProxy(request, ctx) {
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 20), 1), 50);
     const search = new URLSearchParams({ offset: String(offset), platform: '2', limit: String(limit), q: url.searchParams.get('q') || '', q_type: url.searchParams.get('q_type') || '' });
     return loadCachedManga(request, ctx, 10 * 60, async () => {
-      const results = await fetchDesktopJson('/api/kb/web/searchci/comics', search.toString());
+      const results = await fetchDesktopJson('/api/kb/web/searchcl/comics', search.toString());
       return { total: Number(results.total || 0), offset, limit, list: Array.isArray(results.list) ? results.list : [] };
     });
   }
